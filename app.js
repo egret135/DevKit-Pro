@@ -156,7 +156,8 @@
                 structName: currentSettings.structName || undefined, // Use undefined to trigger auto-generation
                 packageName: currentSettings.packageName,
                 generateTableName: currentSettings.generateTableName,
-                inlineNestedStructs: elements.inlineNestedStructs.checked  // Read directly from UI
+                inlineNestedStructs: elements.inlineNestedStructs.checked,  // Read directly from UI
+                inputType: inputType  // Pass input type to control tag generation
             };
 
             const goCode = generateGoStruct(parsedData, options);

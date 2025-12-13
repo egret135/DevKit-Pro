@@ -6,7 +6,8 @@ function generateGoStruct(parsedData, options = {}) {
         structName = parsedData.structName || snakeToCamel(parsedData.tableName),
         generateTableName = true,
         packageName = 'model',
-        inlineNestedStructs = true  // New option: inline nested structs by default
+        inlineNestedStructs = true,  // New option: inline nested structs by default
+        inputType = 'ddl'  // New option: 'json' or 'ddl' to determine tag generation
     } = options;
 
     let code = '';
@@ -23,8 +24,8 @@ function generateGoStruct(parsedData, options = {}) {
     const maxFieldNameLen = Math.max(...fields.map(f => f.goName.length));
     const maxTypeLen = Math.max(...fields.map(f => f.goType.length));
 
-    // Generate gorm tags and calculate max tag length
-    const fieldTags = fields.map(f => generateGormTag(f));
+    // Generate tags based on input type
+    const fieldTags = fields.map(f => generateFieldTag(f, inputType));
     const maxTagLen = Math.max(...fieldTags.map(t => t.length));
 
     // Generate fields with alignment
@@ -42,8 +43,8 @@ function generateGoStruct(parsedData, options = {}) {
 
     code += `}\n`;
 
-    // Add TableName method if enabled
-    if (generateTableName && parsedData.tableName) {
+    // Add TableName method if enabled (only for DDL, not JSON)
+    if (inputType !== 'json' && generateTableName && parsedData.tableName) {
         code += `\n// TableName 返回表名\n`;
         code += `func (${structName}) TableName() string {\n`;
         code += `    return "${parsedData.tableName}"\n`;
@@ -54,7 +55,7 @@ function generateGoStruct(parsedData, options = {}) {
     if (!inlineNestedStructs && parsedData.nestedStructs && parsedData.nestedStructs.length > 0) {
         for (const nested of parsedData.nestedStructs) {
             code += '\n';
-            code += generateNestedStruct(nested);
+            code += generateNestedStruct(nested, inputType);
         }
     }
 
@@ -116,6 +117,17 @@ function generateInlineStruct(nestedData) {
     return code;
 }
 
+// Generate field tag based on input type
+function generateFieldTag(field, inputType) {
+    if (inputType === 'json') {
+        // JSON input: only json tag
+        return `\`json:"${field.jsonName}"\``;
+    } else {
+        // DDL input: json + gorm tags
+        return generateGormTag(field);
+    }
+}
+
 // Generate gorm tag for a field
 function generateGormTag(field) {
     const jsonTag = `json:"${field.jsonName}"`;
@@ -140,7 +152,7 @@ function generateGormTag(field) {
 }
 
 // Generate nested struct (for JSON objects)
-function generateNestedStruct(nestedData) {
+function generateNestedStruct(nestedData, inputType = 'ddl') {
     let code = '';
 
     code += `// ${nestedData.name} 嵌套结构\n`;
@@ -150,7 +162,13 @@ function generateNestedStruct(nestedData) {
     const maxFieldNameLen = Math.max(...fields.map(f => f.goName.length));
     const maxTypeLen = Math.max(...fields.map(f => f.goType.length));
 
-    const fieldTags = fields.map(f => `\`json:"${f.jsonName}"\``);
+    const fieldTags = fields.map(f => {
+        if (inputType === 'json') {
+            return `\`json:"${f.jsonName}"\``;
+        } else {
+            return `\`json:"${f.jsonName}"\``;  // Nested structs from JSON only have json tags
+        }
+    });
     const maxTagLen = Math.max(...fieldTags.map(t => t.length));
 
     for (let i = 0; i < fields.length; i++) {
