@@ -34,11 +34,20 @@ function generateGoStruct(parsedData, options = {}) {
         const tag = fieldTags[i];
 
         const fieldName = field.goName.padEnd(maxFieldNameLen);
-        const fieldType = field.goType.padEnd(maxTypeLen);
-        const tagStr = tag.padEnd(maxTagLen);
-        const comment = field.comment ? ` // ${field.comment}` : '';
 
-        code += `    ${fieldName} ${fieldType} ${tagStr}${comment}\n`;
+        // Check if this is an inline struct (goType contains 'struct {')
+        if (field.goType.includes('struct {')) {
+            // For inline structs, the tag goes at the end after the closing brace
+            const fieldType = field.goType;  // Don't pad inline structs
+            const comment = field.comment ? ` // ${field.comment}` : '';
+            code += `    ${fieldName} ${fieldType} ${tag}${comment}\n`;
+        } else {
+            // For regular fields, normal formatting
+            const fieldType = field.goType.padEnd(maxTypeLen);
+            const tagStr = tag.padEnd(maxTagLen);
+            const comment = field.comment ? ` // ${field.comment}` : '';
+            code += `    ${fieldName} ${fieldType} ${tagStr}${comment}\n`;
+        }
     }
 
     code += `}\n`;
