@@ -123,6 +123,51 @@ body {
     display: flex;
     gap: var(--space-3);
     align-items: center;
+    align-items: center;
+}
+
+.mode-switcher {
+    display: flex;
+    background: var(--color-bg-secondary);
+    padding: 2px;
+    border-radius: var(--radius-md);
+    border: 1px solid var(--color-border);
+}
+
+.mode-btn {
+    padding: 4px 12px;
+    font-size: 13px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    background: transparent;
+    border: none;
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.mode-btn:hover {
+    color: var(--color-text-primary);
+}
+
+.mode-btn.active {
+    background: var(--color-bg);
+    color: var(--color-text-primary);
+    box-shadow: var(--shadow-sm);
+    font-weight: 600;
+}
+
+.separator {
+    width: 1px;
+    height: 24px;
+    background: var(--color-border);
+    margin: 0 var(--space-2);
+}
+
+.options-group {
+    display: flex;
+    gap: var(--space-3);
+    align-items: center;
 }
 
 /* ==================== Main Content ==================== */
@@ -138,6 +183,10 @@ body {
     gap: 0;
 }
 
+.workspace.hidden {
+    display: none;
+}
+
 /* ==================== Panel ==================== */
 .panel {
     display: flex;
@@ -145,6 +194,37 @@ body {
     background: var(--color-bg);
     border-right: 1px solid var(--color-border);
     min-width: 0;
+    height: 100%;
+}
+
+.panel.vertical-split {
+    display: grid;
+    grid-template-rows: 1fr 1fr;
+    border-right: 1px solid var(--color-border);
+}
+
+.sub-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    border-bottom: 1px solid var(--color-border);
+}
+
+.sub-panel:last-child {
+    border-bottom: none;
+}
+
+.panel-header.small {
+    min-height: 32px;
+    padding: var(--space-2) var(--space-6);
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+}
+
+.btn-ghost.small {
+    height: 24px;
+    padding: 0 var(--space-2);
+    font-size: 11px;
 }
 
 .panel:last-child {

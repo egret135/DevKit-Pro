@@ -54,8 +54,11 @@ function parseMySQLDDL(ddl) {
             // Check if auto increment
             const isAutoIncrement = /AUTO_INCREMENT/i.test(constraints);
 
+            // Check if unsigned
+            const isUnsigned = /UNSIGNED/i.test(constraints) || /UNSIGNED/i.test(fieldType);
+
             // Map MySQL type to Go type
-            const goType = mapMySQLTypeToGo(fieldType);
+            const goType = mapMySQLTypeToGo(fieldType, isUnsigned);
 
             // Generate Go field name (snake_case to CamelCase)
             const goFieldName = snakeToCamel(fieldName);
@@ -82,17 +85,38 @@ function parseMySQLDDL(ddl) {
 }
 
 // Map MySQL types to Go types
-function mapMySQLTypeToGo(mysqlType) {
+function mapMySQLTypeToGo(mysqlType, isUnsigned = false) {
     const type = mysqlType.toUpperCase();
 
-    // TINYINT(1) is boolean
-    if (type.match(/^TINYINT\(1\)/)) {
+    // TINYINT(1) is boolean (unless explicit handling wanted, but keep bool for now)
+    if (type.match(/^TINYINT\(1\)/) && !isUnsigned) {
         return 'bool';
     }
 
-    // Integer types
-    if (type.match(/^(TINYINT|SMALLINT|MEDIUMINT|INT|INTEGER|BIGINT)/)) {
-        return 'int64';
+    // Integer types with precise mapping
+    // INT8/UINT8
+    if (type.match(/^TINYINT/)) {
+        return isUnsigned ? 'uint8' : 'int8';
+    }
+
+    // INT16/UINT16
+    if (type.match(/^SMALLINT/)) {
+        return isUnsigned ? 'uint16' : 'int16';
+    }
+
+    // INT/UINT (MediumInt is 24-bit, fits in 32-bit int)
+    if (type.match(/^MEDIUMINT/)) {
+        return isUnsigned ? 'uint' : 'int';
+    }
+
+    // INT/UINT
+    if (type.match(/^(INT|INTEGER)/)) {
+        return isUnsigned ? 'uint' : 'int';
+    }
+
+    // INT64/UINT64
+    if (type.match(/^BIGINT/)) {
+        return isUnsigned ? 'uint64' : 'int64';
     }
 
     // String types

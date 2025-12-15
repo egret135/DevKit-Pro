@@ -29,32 +29,42 @@
                     <h1>DDL & JSON to Go Struct</h1>
                 </div>
                 <div class="header-actions">
-                    <label class="checkbox-inline">
-                        <input type="checkbox" id="inlineNestedStructs" checked />
-                        <span>内联嵌套</span>
-                    </label>
-                    <select id="dbType" class="select">
-                        <option value="auto">自动检测</option>
-                        <option value="mysql">MySQL</option>
-                        <option value="postgresql">PostgreSQL</option>
-                        <option value="sqlite">SQLite</option>
-                        <option value="json">JSON</option>
-                    </select>
-                    <button id="settingsBtn" class="btn-icon" title="设置">
-                        <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
-                            <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" />
-                            <path
-                                d="M12 1v3m0 16v3M23 12h-3M4 12H1M20.5 3.5l-2.1 2.1M5.6 18.4l-2.1 2.1M20.5 20.5l-2.1-2.1M5.6 5.6L3.5 3.5"
-                                stroke="currentColor" stroke-width="2" stroke-linecap="round" />
-                        </svg>
-                    </button>
+                    <div class="mode-switcher">
+                        <button id="modeConverter" class="mode-btn active">转换器</button>
+                        <button id="modeDiff" class="mode-btn">DDL 对比</button>
+                    </div>
+                    <div class="separator"></div>
+
+                    <!-- Converter Options -->
+                    <div id="converterOptions" class="options-group">
+                        <label class="checkbox-inline">
+                            <input type="checkbox" id="inlineNestedStructs" checked />
+                            <span>内联嵌套</span>
+                        </label>
+                        <select id="dbType" class="select">
+                            <option value="auto">自动检测</option>
+                            <option value="mysql">MySQL</option>
+                            <option value="postgresql">PostgreSQL</option>
+                            <option value="sqlite">SQLite</option>
+                            <option value="json">JSON</option>
+                        </select>
+                        <button id="settingsBtn" class="btn-icon" title="设置">
+                            <svg width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                <circle cx="12" cy="12" r="3" stroke="currentColor" stroke-width="2" />
+                                <path
+                                    d="M12 1v3m0 16v3M23 12h-3M4 12H1M20.5 3.5l-2.1 2.1M5.6 18.4l-2.1 2.1M20.5 20.5l-2.1-2.1M5.6 5.6L3.5 3.5"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                            </svg>
+                        </button>
+                    </div>
                 </div>
             </div>
         </header>
 
         <!-- Main Content -->
         <main class="main">
-            <div class="workspace">
+            <!-- Converter Workspace -->
+            <div id="converterWorkspace" class="workspace">
                 <!-- Input Panel -->
                 <div class="panel">
                     <div class="panel-header">
@@ -107,6 +117,50 @@
                     <div class="panel-body">
                         <pre id="outputArea"
                             class="editor output"><code>// 在左侧输入 DDL 或 JSON，点击"转换"按钮生成 Go struct</code></pre>
+                    </div>
+                </div>
+            </div>
+
+            <!-- Diff Workspace (Hidden by default) -->
+            <div id="diffWorkspace" class="workspace hidden">
+                <!-- Source/Target Panels (Left) -->
+                <div class="panel vertical-split">
+                    <!-- Target (Online) DDL -->
+                    <div class="sub-panel">
+                        <div class="panel-header small">
+                            <div class="panel-title">Online / 目标 DDL (旧)</div>
+                            <button id="clearDiffBtn" class="btn-ghost small">清空全部</button>
+                        </div>
+                        <div class="panel-body">
+                            <textarea id="diffTargetInput" class="editor" placeholder="粘贴线上环境的 DDL (基准)..."
+                                spellcheck="false"></textarea>
+                        </div>
+                    </div>
+                    <!-- Source (Staging) DDL -->
+                    <div class="sub-panel">
+                        <div class="panel-header small">
+                            <div class="panel-title">Staging / 本地 DDL (新)</div>
+                        </div>
+                        <div class="panel-body">
+                            <textarea id="diffSourceInput" class="editor" placeholder="粘贴新开发的 DDL (变更后)..."
+                                spellcheck="false"></textarea>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Diff Output Panel (Right) -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span>ALTER 语句</span>
+                        </div>
+                        <div class="panel-actions">
+                            <button id="copyDiffBtn" class="btn-ghost">复制 SQL</button>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <pre id="diffOutputArea" class="editor output"><code>-- 在左侧分别输入新旧 DDL
+-- 将自动生成 ALTER 语句</code></pre>
                     </div>
                 </div>
             </div>
@@ -165,7 +219,9 @@
     <script src="utils/type-mapper.js"></script>
     <script src="utils/formatter.js"></script>
     <script src="utils/exporter.js"></script>
+    <script src="utils/exporter.js"></script>
     <script src="generators/struct-generator.js"></script>
+    <script src="generators/diff-engine.js"></script>
     <script src="config/settings.js"></script>
     <script src="app.js"></script>
 </body>

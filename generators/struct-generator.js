@@ -22,7 +22,12 @@ function generateGoStruct(parsedData, options = {}) {
 
     // Calculate max widths for alignment
     const maxFieldNameLen = Math.max(...fields.map(f => f.goName.length));
-    const maxTypeLen = Math.max(...fields.map(f => f.goType.length));
+
+    // For maxTypeLen, exclude inline structs as they are multi-line and don't need padding
+    const regularFields = fields.filter(f => !f.goType.includes('struct {'));
+    const maxTypeLen = regularFields.length > 0
+        ? Math.max(...regularFields.map(f => f.goType.length))
+        : 20; // Default if all fields are inline structs
 
     // Generate tags based on input type
     const fieldTags = fields.map(f => generateFieldTag(f, inputType));
