@@ -138,4 +138,4 @@ MIT License
 ---
 
 **开发者**: 白鹭 & Google Antigravity  
-**仓库**: https://github.com/yourusername/devkit-pro
+**仓库**: https://github.com/egret135/DevKit-Pro
