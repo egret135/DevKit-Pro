@@ -1,29 +1,20 @@
-<svg width="128" height="128" viewBox="0 0 128 128" fill="none" xmlns="http://www.w3.org/2000/svg">
-  <!-- Background Circle -->
-  <circle cx="64" cy="64" r="64" fill="#3B82F6"/>
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 512 512">
+  <defs>
+    <linearGradient id="grad1" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#4facfe;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#00f2fe;stop-opacity:1" />
+    </linearGradient>
+    <linearGradient id="grad2" x1="0%" y1="0%" x2="100%" y2="100%">
+      <stop offset="0%" style="stop-color:#667eea;stop-opacity:1" />
+      <stop offset="100%" style="stop-color:#764ba2;stop-opacity:1" />
+    </linearGradient>
+  </defs>
   
-  <!-- Database Symbol -->
-  <g transform="translate(32, 28)">
-    <!-- Top disk -->
-    <ellipse cx="32" cy="12" rx="24" ry="8" fill="#FFFFFF" opacity="0.9"/>
-    <!-- Middle cylinder -->
-    <rect x="8" y="12" width="48" height="32" fill="#FFFFFF" opacity="0.75"/>
-    <!-- Bottom disk -->
-    <ellipse cx="32" cy="44" rx="24" ry="8" fill="#FFFFFF" opacity="0.9"/>
-    <!-- Cylinder lines -->
-    <path d="M8 12 L8 44" stroke="#3B82F6" stroke-width="2"/>
-    <path d="M56 12 L56 44" stroke="#3B82F6" stroke-width="2"/>
-  </g>
+  <rect x="0" y="0" width="512" height="512" rx="100" ry="100" fill="url(#grad2)" />
   
-  <!-- Arrow -->
-  <g transform="translate(64, 52)">
-    <path d="M0 0 L16 0 L16 -6 L28 6 L16 18 L16 12 L0 12 Z" fill="#FFFFFF" opacity="0.95"/>
-  </g>
-  
-  <!-- Go Logo (simplified) -->
-  <g transform="translate(78, 48)">
-    <!-- Go gopher ear shape simplified -->
-    <circle cx="8" cy="8" r="12" fill="#FFFFFF" opacity="0.9"/>
-    <text x="4" y="14" font-family="Arial, sans-serif" font-size="16" font-weight="bold" fill="#3B82F6">G</text>
+  <g transform="translate(256, 256) scale(1.2)">
+    <path d="M-80 -60 L-140 0 L-80 60" fill="none" stroke="white" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M80 -60 L140 0 L80 60" fill="none" stroke="white" stroke-width="40" stroke-linecap="round" stroke-linejoin="round"/>
+    <path d="M-30 80 L30 -80" fill="none" stroke="white" stroke-width="40" stroke-linecap="round"/>
   </g>
 </svg>
