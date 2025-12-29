@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<html>
+
+<body>
+    <img id="svgImg" src="icons/icon-new.svg" width="512" height="512">
+    <script>
+        function getIconData(size) {
+            const canvas = document.createElement('canvas');
+            canvas.width = size;
+            canvas.height = size;
+            const ctx = canvas.getContext('2d');
+            const img = document.getElementById('svgImg');
+            ctx.drawImage(img, 0, 0, size, size);
+            return canvas.toDataURL('image/png').split(',')[1];
+        }
+    </script>
+</body>
+
+</html>
