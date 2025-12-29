@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
-  "name": "DDL & JSON to Go Struct",
-  "version": "1.0.0",
-  "description": "Convert database DDL (MySQL, PostgreSQL, SQLite) and JSON to Go structs with gorm tags",
+  "name": "DevKit Pro",
+  "version": "2.0.0",
+  "description": "Developer toolkit: DDL/JSON to Go Struct, DDL Schema Diff, and Markdown Preview with Mermaid diagrams",
   "action": {
     "default_icon": {
       "16": "icons/icon16.png",

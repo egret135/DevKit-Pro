@@ -4,7 +4,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>DDL & JSON to Go Struct</title>
+    <title>DevKit Pro</title>
     <link rel="stylesheet" href="style.css">
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
@@ -26,12 +26,13 @@
                         <path d="M14 6l4 6-4 6" stroke="currentColor" stroke-width="2" stroke-linecap="round"
                             stroke-linejoin="round" />
                     </svg>
-                    <h1>DDL & JSON to Go Struct</h1>
+                    <h1>DevKit Pro</h1>
                 </div>
                 <div class="header-actions">
                     <div class="mode-switcher">
                         <button id="modeConverter" class="mode-btn active">转换器</button>
                         <button id="modeDiff" class="mode-btn">DDL 对比</button>
+                        <button id="modeMarkdown" class="mode-btn">Markdown</button>
                     </div>
                     <div class="separator"></div>
 
@@ -164,6 +165,68 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Markdown Workspace (Hidden by default) -->
+            <div id="markdownWorkspace" class="workspace hidden">
+                <!-- Input Panel -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span>Markdown 输入</span>
+                        </div>
+                        <div class="panel-actions">
+                            <button id="clearMarkdownBtn" class="btn-ghost">清除</button>
+                        </div>
+                    </div>
+                    <div class="panel-body">
+                        <textarea id="markdownInput" class="editor"
+                            placeholder="输入 Markdown 文本...&#10;&#10;支持 Mermaid 图表：&#10;```mermaid&#10;flowchart TD&#10;    A[开始] --> B[结束]&#10;```"
+                            spellcheck="false"></textarea>
+                    </div>
+                </div>
+
+                <!-- Preview Panel -->
+                <div class="panel">
+                    <div class="panel-header">
+                        <div class="panel-title">
+                            <span>渲染预览</span>
+                        </div>
+                        <div class="panel-actions">
+                            <button id="copyMarkdownHtmlBtn" class="btn-ghost">
+                                <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                    <rect x="8" y="8" width="13" height="13" rx="2" stroke="currentColor"
+                                        stroke-width="2" />
+                                    <path d="M5 16V5a2 2 0 0 1 2-2h11" stroke="currentColor" stroke-width="2" />
+                                </svg>
+                                复制 HTML
+                            </button>
+                            <div class="dropdown" id="exportMarkdownDropdown">
+                                <button class="btn-ghost dropdown-trigger" id="exportMarkdownBtn">
+                                    <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                        <path d="M12 3v12m-4-4l4 4 4-4M3 21h18" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" stroke-linejoin="round" />
+                                    </svg>
+                                    导出图片
+                                    <svg width="12" height="12" viewBox="0 0 24 24" fill="none" class="dropdown-arrow">
+                                        <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2"
+                                            stroke-linecap="round" stroke-linejoin="round" />
+                                    </svg>
+                                </button>
+                                <div class="dropdown-menu">
+                                    <button class="dropdown-item" data-format="png">导出 PNG</button>
+                                    <button class="dropdown-item" data-format="jpg">导出 JPG</button>
+                                    <button class="dropdown-item" data-format="svg">导出 SVG</button>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                    <div class="panel-body markdown-preview-container">
+                        <div id="markdownPreview" class="markdown-preview">
+                            <p class="placeholder">输入 Markdown 文本开始预览...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </main>
 
         <!-- Footer -->
@@ -210,6 +273,11 @@
         </div>
     </div>
 
+    <!-- External Libraries (Local) -->
+    <script src="lib/marked.min.js"></script>
+    <script src="lib/mermaid.min.js"></script>
+    <script src="lib/html2canvas.min.js"></script>
+
     <!-- Scripts -->
     <script src="parsers/detector.js"></script>
     <script src="parsers/mysql-parser.js"></script>
@@ -219,9 +287,11 @@
     <script src="utils/type-mapper.js"></script>
     <script src="utils/formatter.js"></script>
     <script src="utils/exporter.js"></script>
-    <script src="utils/exporter.js"></script>
     <script src="generators/struct-generator.js"></script>
     <script src="generators/diff-engine.js"></script>
+    <script src="parsers/markdown-renderer.js"></script>
+    <script src="utils/chart-exporter.js"></script>
+    <script src="utils/markdown-exporter.js"></script>
     <script src="config/settings.js"></script>
     <script src="app.js"></script>
 </body>

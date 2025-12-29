@@ -37,15 +37,26 @@
         // Mode Switcher
         modeConverter: document.getElementById('modeConverter'),
         modeDiff: document.getElementById('modeDiff'),
+        modeMarkdown: document.getElementById('modeMarkdown'),
         converterWorkspace: document.getElementById('converterWorkspace'),
         diffWorkspace: document.getElementById('diffWorkspace'),
+        markdownWorkspace: document.getElementById('markdownWorkspace'),
+
+        // Markdown Elements
+        markdownInput: document.getElementById('markdownInput'),
+        markdownPreview: document.getElementById('markdownPreview'),
+        clearMarkdownBtn: document.getElementById('clearMarkdownBtn'),
+        copyMarkdownHtmlBtn: document.getElementById('copyMarkdownHtmlBtn'),
+        exportMarkdownDropdown: document.getElementById('exportMarkdownDropdown'),
+        exportMarkdownBtn: document.getElementById('exportMarkdownBtn'),
     };
 
     // State
     let currentSettings = null;
     let lastParsedData = null;
     let lastGeneratedCode = '';
-    let currentMode = 'converter'; // 'converter' or 'diff'
+    let currentMode = 'converter'; // 'converter', 'diff', or 'markdown'
+    let lastRenderedHtml = '';
 
     // Initialize
     async function init() {
@@ -72,6 +83,20 @@
         elements.diffSourceInput.addEventListener('input', handleDiffChange);
         elements.copyDiffBtn.addEventListener('click', handleCopyDiff);
         elements.clearDiffBtn.addEventListener('click', handleClearDiff);
+
+        // Attach event listeners - Markdown
+        elements.modeMarkdown.addEventListener('click', () => switchMode('markdown'));
+        elements.markdownInput.addEventListener('input', handleMarkdownChange);
+        elements.clearMarkdownBtn.addEventListener('click', handleClearMarkdown);
+        elements.copyMarkdownHtmlBtn.addEventListener('click', handleCopyMarkdownHtml);
+
+        // Event delegation for Mermaid export buttons
+        elements.markdownPreview.addEventListener('click', handleChartExport);
+
+        // Markdown export dropdown
+        elements.exportMarkdownBtn.addEventListener('click', toggleExportDropdown);
+        elements.exportMarkdownDropdown.addEventListener('click', handleMarkdownExport);
+        document.addEventListener('click', closeExportDropdown);
 
         // Keyboard shortcuts
         document.addEventListener('keydown', handleKeyboard);
@@ -100,20 +125,29 @@
     function switchMode(mode) {
         currentMode = mode;
 
+        // Reset all mode buttons and workspaces
+        elements.modeConverter.classList.remove('active');
+        elements.modeDiff.classList.remove('active');
+        elements.modeMarkdown.classList.remove('active');
+        elements.converterWorkspace.classList.add('hidden');
+        elements.diffWorkspace.classList.add('hidden');
+        elements.markdownWorkspace.classList.add('hidden');
+
         if (mode === 'converter') {
             elements.modeConverter.classList.add('active');
-            elements.modeDiff.classList.remove('active');
             elements.converterWorkspace.classList.remove('hidden');
-            elements.diffWorkspace.classList.add('hidden');
-            elements.converterOptions.style.visibility = 'visible'; // Show converter options
+            elements.converterOptions.style.visibility = 'visible';
             setStatus('转换模式', 'ready');
-        } else {
-            elements.modeConverter.classList.remove('active');
+        } else if (mode === 'diff') {
             elements.modeDiff.classList.add('active');
-            elements.converterWorkspace.classList.add('hidden');
             elements.diffWorkspace.classList.remove('hidden');
-            elements.converterOptions.style.visibility = 'hidden'; // Hide converter-specific options
+            elements.converterOptions.style.visibility = 'hidden';
             setStatus('DDL 对比模式', 'ready');
+        } else if (mode === 'markdown') {
+            elements.modeMarkdown.classList.add('active');
+            elements.markdownWorkspace.classList.remove('hidden');
+            elements.converterOptions.style.visibility = 'hidden';
+            setStatus('Markdown 预览模式', 'ready');
         }
     }
 
@@ -166,6 +200,156 @@
         elements.diffSourceInput.value = '';
         elements.diffOutputArea.textContent = '-- 在左侧分别输入新旧 DDL\n-- 将自动生成 ALTER 语句';
         setStatus('Diff 已清空', 'ready');
+    }
+
+    // ==================== Markdown Mode ====================
+
+    // Debounced markdown render
+    const debouncedMarkdownRender = debounce(() => handleMarkdownRender(), 300);
+
+    function handleMarkdownChange() {
+        debouncedMarkdownRender();
+    }
+
+    async function handleMarkdownRender() {
+        const input = elements.markdownInput.value;
+
+        if (!input.trim()) {
+            elements.markdownPreview.innerHTML = '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
+            lastRenderedHtml = '';
+            return;
+        }
+
+        setStatus('正在渲染...', 'processing');
+
+        try {
+            if (typeof MarkdownRenderer !== 'undefined') {
+                const html = await MarkdownRenderer.render(input);
+                elements.markdownPreview.innerHTML = html;
+                lastRenderedHtml = html;
+                setStatus('渲染完成', 'success');
+            } else {
+                throw new Error('Markdown 渲染器未加载');
+            }
+        } catch (error) {
+            elements.markdownPreview.innerHTML = `<p class="placeholder" style="color: var(--color-error);">渲染错误: ${error.message}</p>`;
+            setStatus('渲染失败', 'error');
+        }
+    }
+
+    function handleClearMarkdown() {
+        elements.markdownInput.value = '';
+        elements.markdownPreview.innerHTML = '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
+        lastRenderedHtml = '';
+        setStatus('Markdown 已清除', 'ready');
+    }
+
+    async function handleCopyMarkdownHtml() {
+        if (!lastRenderedHtml) {
+            setStatus('没有可复制的内容', 'error');
+            return;
+        }
+
+        try {
+            await navigator.clipboard.writeText(lastRenderedHtml);
+            setStatus('HTML 已复制到剪贴板', 'success');
+            elements.copyMarkdownHtmlBtn.classList.add('copied');
+            setTimeout(() => elements.copyMarkdownHtmlBtn.classList.remove('copied'), 600);
+        } catch (error) {
+            setStatus('复制失败', 'error');
+        }
+    }
+
+    // Toggle export dropdown
+    function toggleExportDropdown(event) {
+        event.stopPropagation();
+        elements.exportMarkdownDropdown.classList.toggle('open');
+    }
+
+    // Close export dropdown when clicking outside
+    function closeExportDropdown(event) {
+        if (!elements.exportMarkdownDropdown.contains(event.target)) {
+            elements.exportMarkdownDropdown.classList.remove('open');
+        }
+    }
+
+    // Handle markdown export (PNG/JPG/SVG)
+    async function handleMarkdownExport(event) {
+        const item = event.target.closest('.dropdown-item');
+        if (!item) return;
+
+        const format = item.dataset.format;
+        elements.exportMarkdownDropdown.classList.remove('open');
+
+        if (!lastRenderedHtml) {
+            setStatus('没有可导出的内容', 'error');
+            return;
+        }
+
+        if (typeof MarkdownExporter === 'undefined') {
+            setStatus('导出模块未加载', 'error');
+            return;
+        }
+
+        try {
+            setStatus(`正在导出 ${format.toUpperCase()}...`, 'processing');
+
+            if (format === 'png') {
+                await MarkdownExporter.exportAsPNG(elements.markdownPreview);
+            } else if (format === 'jpg') {
+                await MarkdownExporter.exportAsJPG(elements.markdownPreview);
+            } else if (format === 'svg') {
+                await MarkdownExporter.exportAsSVG(elements.markdownPreview);
+            }
+
+            setStatus(`${format.toUpperCase()} 导出成功`, 'success');
+        } catch (error) {
+            setStatus(`导出失败: ${error.message}`, 'error');
+        }
+    }
+    // Handle chart export button clicks (event delegation)
+    async function handleChartExport(event) {
+        const btn = event.target.closest('.mermaid-export-btn');
+        if (!btn) return;
+
+        const format = btn.dataset.format;
+        const index = parseInt(btn.dataset.index, 10);
+        const container = btn.closest('.mermaid-container');
+
+        if (!container) {
+            setStatus('未找到图表容器', 'error');
+            return;
+        }
+
+        // 选择 Mermaid 图表 SVG，排除按钮内的图标 SVG
+        const svgElement = container.querySelector('svg[id^="mermaid-"]') ||
+            container.querySelector(':scope > svg');
+        if (!svgElement) {
+            setStatus('未找到 SVG 元素', 'error');
+            return;
+        }
+
+        // Check if ChartExporter is loaded
+        if (typeof ChartExporter === 'undefined') {
+            setStatus('导出模块未加载', 'error');
+            return;
+        }
+
+        const filename = ChartExporter.generateFilename(index);
+
+        try {
+            if (format === 'svg') {
+                setStatus('正在导出 SVG...', 'processing');
+                ChartExporter.exportAsSVG(svgElement, filename);
+                setStatus('SVG 导出成功', 'success');
+            } else if (format === 'png') {
+                setStatus('正在导出 PNG...', 'processing');
+                await ChartExporter.exportAsPNG(svgElement, filename);
+                setStatus('PNG 导出成功', 'success');
+            }
+        } catch (error) {
+            setStatus(`导出失败: ${error.message}`, 'error');
+        }
     }
 
     // Handle input change (auto-detect type and auto-convert)

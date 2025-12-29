@@ -194,7 +194,10 @@ body {
     background: var(--color-bg);
     border-right: 1px solid var(--color-border);
     min-width: 0;
+    min-height: 0;
+    /* Critical for grid/flex children to allow shrinking */
     height: 100%;
+    overflow: hidden;
 }
 
 .panel.vertical-split {
@@ -259,6 +262,8 @@ body {
 
 .panel-body {
     flex: 1;
+    min-height: 0;
+    /* Critical for flexbox scrolling */
     overflow: hidden;
     position: relative;
 }
@@ -630,5 +635,418 @@ body {
 
     .panel:last-child {
         border-bottom: none;
+    }
+}
+
+/* ==================== Markdown Preview - Typora Style ==================== */
+/* Note: .markdown-preview-container is applied to .panel-body */
+.panel-body.markdown-preview-container {
+    overflow-y: auto !important;
+    overflow-x: hidden;
+    padding: 30px 40px;
+    background: #FFFFFF;
+}
+
+.markdown-preview {
+    font-family: 'Open Sans', 'Clear Sans', 'Helvetica Neue', Helvetica, Arial, sans-serif;
+    font-size: 15px;
+    line-height: 1.8;
+    color: #333333;
+    max-width: 860px;
+    margin: 0 auto;
+    word-wrap: break-word;
+}
+
+.markdown-preview .placeholder {
+    color: #999;
+    font-style: italic;
+    text-align: center;
+    padding: 40px 0;
+}
+
+/* Headings - Typora Style */
+.markdown-preview h1 {
+    font-size: 2.25rem;
+    font-weight: 700;
+    margin: 1rem 0 1.5rem 0;
+    padding-bottom: 0.5rem;
+    border-bottom: 1px solid #EAECEF;
+    color: #000000;
+    line-height: 1.25;
+}
+
+.markdown-preview h2 {
+    font-size: 1.75rem;
+    font-weight: 700;
+    margin: 2.5rem 0 1rem 0;
+    padding-bottom: 0.4rem;
+    border-bottom: 1px solid #EAECEF;
+    color: #000000;
+    line-height: 1.25;
+}
+
+.markdown-preview h3 {
+    font-size: 1.5rem;
+    font-weight: 600;
+    margin: 2rem 0 0.8rem 0;
+    color: #000000;
+    line-height: 1.25;
+}
+
+.markdown-preview h4 {
+    font-size: 1.25rem;
+    font-weight: 600;
+    margin: 1.5rem 0 0.6rem 0;
+    color: #000000;
+}
+
+.markdown-preview h5,
+.markdown-preview h6 {
+    font-size: 1rem;
+    font-weight: 600;
+    margin: 1.2rem 0 0.5rem 0;
+    color: #555555;
+}
+
+/* Paragraphs */
+.markdown-preview p {
+    margin: 0 0 1.2rem 0;
+}
+
+/* Links - Typora Style */
+.markdown-preview a {
+    color: #4183C4;
+    text-decoration: none;
+}
+
+.markdown-preview a:hover {
+    text-decoration: underline;
+}
+
+/* Lists - Clean Style */
+.markdown-preview ul,
+.markdown-preview ol {
+    margin: 0 0 1.2rem 0;
+    padding-left: 2rem;
+}
+
+.markdown-preview li {
+    margin: 0.4rem 0;
+}
+
+.markdown-preview li>p {
+    margin: 0;
+}
+
+.markdown-preview li>ul,
+.markdown-preview li>ol {
+    margin: 0.3rem 0;
+}
+
+/* Blockquote - Typora Style */
+.markdown-preview blockquote {
+    margin: 1rem 0;
+    padding: 0.8rem 1rem;
+    border-left: 4px solid #DDDDDD;
+    background: #F8F8F8;
+    color: #666666;
+}
+
+.markdown-preview blockquote p:last-child {
+    margin-bottom: 0;
+}
+
+.markdown-preview blockquote blockquote {
+    margin: 0.5rem 0;
+}
+
+/* Inline Code - Typora Style */
+.markdown-preview code {
+    font-family: 'JetBrains Mono', 'Fira Code', Consolas, Monaco, 'Courier New', monospace;
+    font-size: 0.9em;
+    padding: 0.2em 0.4em;
+    background: #F3F4F6;
+    border-radius: 3px;
+    color: #C7254E;
+}
+
+/* Code Blocks - Typora Dark Style */
+.markdown-preview pre {
+    margin: 1.2rem 0;
+    padding: 1rem 1.2rem;
+    background: #23241F;
+    border-radius: 5px;
+    overflow-x: auto;
+}
+
+.markdown-preview pre code {
+    display: block;
+    padding: 0;
+    background: transparent;
+    color: #F8F8F2;
+    font-size: 0.9rem;
+    line-height: 1.6;
+    border-radius: 0;
+}
+
+/* Tables - Typora Style */
+.markdown-preview table {
+    width: 100%;
+    margin: 1.2rem 0;
+    border-collapse: collapse;
+    font-size: 0.95rem;
+}
+
+.markdown-preview th,
+.markdown-preview td {
+    padding: 0.6rem 1rem;
+    border: 1px solid #DDDDDD;
+    text-align: left;
+}
+
+.markdown-preview th {
+    background: #F6F8FA;
+    font-weight: 600;
+}
+
+.markdown-preview tr:nth-child(even) {
+    background: #FAFBFC;
+}
+
+/* Horizontal Rule */
+.markdown-preview hr {
+    margin: 2rem 0;
+    border: none;
+    height: 2px;
+    background: #EAECEF;
+}
+
+/* Images */
+.markdown-preview img {
+    max-width: 100%;
+    height: auto;
+    margin: 1rem 0;
+    border-radius: 4px;
+}
+
+/* Strong & Emphasis */
+.markdown-preview strong {
+    font-weight: 700;
+    color: #000000;
+}
+
+.markdown-preview em {
+    font-style: italic;
+}
+
+/* Mermaid Diagrams - Clean Container */
+.markdown-preview .mermaid-container {
+    margin: 1.5rem 0;
+    padding: 1.5rem;
+    background: #FAFBFC;
+    border: 1px solid #E1E4E8;
+    border-radius: 6px;
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+}
+
+.markdown-preview .mermaid-container svg {
+    max-width: 100%;
+    height: auto;
+}
+
+/* Mermaid Export Buttons */
+.mermaid-export-buttons {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 10;
+}
+
+.markdown-preview .mermaid-container:hover .mermaid-export-buttons {
+    opacity: 1;
+}
+
+.mermaid-export-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: white;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.mermaid-export-btn.svg-btn {
+    background: #4183C4;
+}
+
+.mermaid-export-btn.png-btn {
+    background: #28A745;
+}
+
+.mermaid-export-btn:hover {
+    opacity: 0.9;
+    transform: translateY(-1px);
+}
+
+.mermaid-export-btn:active {
+    transform: translateY(0);
+}
+
+/* Mermaid Error */
+.markdown-preview .mermaid-error {
+    margin: 1rem 0;
+    padding: 1rem;
+    background: #FFF5F5;
+    border: 1px solid #FED7D7;
+    border-radius: 5px;
+    color: #C53030;
+    font-size: 0.9rem;
+}
+
+.markdown-preview .mermaid-error strong {
+    display: block;
+    margin-bottom: 0.5rem;
+    color: #C53030;
+}
+
+.markdown-preview .mermaid-error pre {
+    margin: 0.5rem 0 0 0;
+    padding: 0.5rem;
+    background: rgba(0, 0, 0, 0.04);
+    border: none;
+    font-size: 0.85rem;
+    color: #666;
+}
+
+/* Task Lists (GFM) */
+.markdown-preview input[type="checkbox"] {
+    margin-right: 0.5rem;
+    vertical-align: middle;
+}
+
+/* ==================== Dropdown Menu ==================== */
+.dropdown {
+    position: relative;
+    display: inline-block;
+}
+
+.dropdown-trigger {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+.dropdown-arrow {
+    margin-left: 2px;
+    transition: transform var(--transition-fast);
+}
+
+.dropdown.open .dropdown-arrow {
+    transform: rotate(180deg);
+}
+
+.dropdown-menu {
+    position: absolute;
+    top: 100%;
+    right: 0;
+    margin-top: 4px;
+    min-width: 140px;
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    opacity: 0;
+    visibility: hidden;
+    transform: translateY(-8px);
+    transition: all var(--transition-fast);
+    z-index: 100;
+}
+
+.dropdown.open .dropdown-menu {
+    opacity: 1;
+    visibility: visible;
+    transform: translateY(0);
+}
+
+.dropdown-item {
+    display: block;
+    width: 100%;
+    padding: var(--space-2) var(--space-4);
+    background: none;
+    border: none;
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--color-text-primary);
+    text-align: left;
+    cursor: pointer;
+    transition: background var(--transition-fast);
+}
+
+.dropdown-item:hover {
+    background: var(--color-bg-elevated);
+}
+
+.dropdown-item:first-child {
+    border-radius: var(--radius-md) var(--radius-md) 0 0;
+}
+
+.dropdown-item:last-child {
+    border-radius: 0 0 var(--radius-md) var(--radius-md);
+}
+
+/* ==================== Export Loading Overlay ==================== */
+.export-loading-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(255, 255, 255, 0.9);
+    backdrop-filter: blur(4px);
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    z-index: 9999;
+    opacity: 0;
+    visibility: hidden;
+    transition: all var(--transition-base);
+}
+
+.export-loading-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.export-loading-content {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-4);
+    color: var(--color-text-secondary);
+    font-size: 14px;
+    font-weight: 500;
+}
+
+.export-spinner {
+    width: 40px;
+    height: 40px;
+    border: 3px solid var(--color-border);
+    border-top-color: var(--color-accent);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+}
+
+@keyframes spin {
+    to {
+        transform: rotate(360deg);
     }
 }
