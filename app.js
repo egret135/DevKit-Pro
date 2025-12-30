@@ -27,6 +27,13 @@
         inlineNestedStructs: document.getElementById('inlineNestedStructs'),
         converterOptions: document.getElementById('converterOptions'),
 
+        // Output Format Elements
+        outputFormatGo: document.getElementById('outputFormatGo'),
+        outputFormatProto: document.getElementById('outputFormatProto'),
+        outputTitle: document.getElementById('outputTitle'),
+        protoNestedMode: document.getElementById('protoNestedMode'),
+        goStructOptions: document.getElementById('goStructOptions'),
+
         // Diff Elements
         diffTargetInput: document.getElementById('diffTargetInput'),
         diffSourceInput: document.getElementById('diffSourceInput'),
@@ -75,6 +82,11 @@
         elements.inputArea.addEventListener('input', handleInputChange);
         elements.dbType.addEventListener('change', handleDbTypeChange);
         elements.inlineNestedStructs.addEventListener('change', handleInlineNestedChange);
+
+        // Output format switcher
+        elements.outputFormatGo.addEventListener('change', handleOutputFormatChange);
+        elements.outputFormatProto.addEventListener('change', handleOutputFormatChange);
+        elements.protoNestedMode.addEventListener('change', handleProtoNestedModeChange);
 
         // Attach event listeners - Diff
         elements.modeConverter.addEventListener('click', () => switchMode('converter'));
@@ -384,6 +396,36 @@
         // Save immediately when checkbox changes
         currentSettings.inlineNestedStructs = elements.inlineNestedStructs.checked;
         Settings.save(currentSettings);
+        // Re-convert if data exists
+        if (lastParsedData) {
+            handleConvert();
+        }
+    }
+
+    // Handle output format change
+    function handleOutputFormatChange() {
+        const isProtoFormat = elements.outputFormatProto.checked;
+
+        // Toggle visibility of format-specific options
+        if (isProtoFormat) {
+            elements.goStructOptions.classList.add('hidden');
+            elements.protoNestedMode.classList.remove('hidden');
+        } else {
+            elements.goStructOptions.classList.remove('hidden');
+            elements.protoNestedMode.classList.add('hidden');
+        }
+
+        // Re-convert if data exists
+        if (lastParsedData) {
+            handleConvert();
+        }
+    }
+
+    // Handle Protocol Buffer nested mode change
+    function handleProtoNestedModeChange() {
+        if (lastParsedData) {
+            handleConvert();
+        }
     }
 
     // Update input type badge
@@ -452,20 +494,50 @@
             // Store parsed data
             lastParsedData = parsedData;
 
-            // Generate Go struct
-            const options = {
-                structName: currentSettings.structName || undefined, // Use undefined to trigger auto-generation
-                packageName: currentSettings.packageName,
-                generateTableName: currentSettings.generateTableName,
-                inlineNestedStructs: elements.inlineNestedStructs.checked,  // Read directly from UI
-                inputType: inputType  // Pass input type to control tag generation
-            };
+            // Determine output format
+            const outputFormat = elements.outputFormatProto.checked ? 'proto' : 'go';
 
-            const goCode = generateGoStruct(parsedData, options);
-            lastGeneratedCode = goCode;
+            let generatedCode;
+
+            if (outputFormat === 'proto') {
+                // Generate Protocol Buffer message
+                if (inputType !== 'json') {
+                    throw new Error('Protocol Buffer 仅支持 JSON 输入');
+                }
+
+                const protoOptions = {
+                    messageName: currentSettings.structName || 'Message',
+                    nestedMode: elements.protoNestedMode.value,
+                    packageName: currentSettings.packageName || 'model',
+                    syntax: 'proto3',
+                    numericIntType: 'int32',
+                    numericFloatType: 'float'
+                };
+
+                // Parse JSON for Protocol Buffer (adds field numbers)
+                const protoParsedData = parseJSONForProtobuf(input, protoOptions.messageName);
+                if (protoParsedData.error) {
+                    throw new Error(protoParsedData.error);
+                }
+
+                generatedCode = generateProtoMessage(protoParsedData, protoOptions);
+
+            } else {
+                // Generate Go struct (existing logic)
+                const options = {
+                    structName: currentSettings.structName || undefined, // Use undefined to trigger auto-generation
+                    packageName: currentSettings.packageName,
+                    generateTableName: currentSettings.generateTableName,
+                    inlineNestedStructs: elements.inlineNestedStructs.checked,  // Read directly from UI
+                    inputType: inputType  // Pass input type to control tag generation
+                };
+                generatedCode = generateGoStruct(parsedData, options);
+            }
+
+            lastGeneratedCode = generatedCode;
 
             // Display output
-            elements.outputArea.textContent = goCode;
+            elements.outputArea.textContent = generatedCode;
 
             setStatus('转换成功！', 'success');
 
@@ -505,21 +577,53 @@
         }
 
         try {
-            const structName = currentSettings.structName ||
-                lastParsedData.structName ||
-                snakeToCamel(lastParsedData.tableName);
+            const isProtoFormat = elements.outputFormatProto.checked;
 
-            // Determine required imports
-            const imports = getRequiredImports(lastParsedData.fields);
+            if (isProtoFormat) {
+                // Export as .proto file
+                const messageName = currentSettings.structName || 'Message';
+                const packageName = currentSettings.packageName || 'model';
+                const filename = `${messageName.toLowerCase()}.proto`;
 
-            Exporter.exportAsGoFile(
-                lastGeneratedCode,
-                structName,
-                currentSettings.packageName,
-                imports
-            );
+                const blob = new Blob([lastGeneratedCode], { type: 'text/plain' });
+                const url = URL.createObjectURL(blob);
 
-            setStatus('导出成功！', 'success');
+                // Use Chrome downloads API if available (extension context)
+                if (chrome && chrome.downloads) {
+                    chrome.downloads.download({
+                        url: url,
+                        filename: filename,
+                        saveAs: true
+                    });
+                } else {
+                    // Fallback to regular download
+                    const a = document.createElement('a');
+                    a.href = url;
+                    a.download = filename;
+                    a.click();
+                    URL.revokeObjectURL(url);
+                }
+
+                setStatus('Proto 文件导出成功！', 'success');
+
+            } else {
+                // Export as Go file (existing logic)
+                const structName = currentSettings.structName ||
+                    lastParsedData.structName ||
+                    snakeToCamel(lastParsedData.tableName);
+
+                // Determine required imports
+                const imports = getRequiredImports(lastParsedData.fields);
+
+                Exporter.exportAsGoFile(
+                    lastGeneratedCode,
+                    structName,
+                    currentSettings.packageName,
+                    imports
+                );
+
+                setStatus('导出成功！', 'success');
+            }
 
         } catch (error) {
             setStatus(`导出失败: ${error.message}`, 'error');

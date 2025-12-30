@@ -38,10 +38,16 @@
 
                     <!-- Converter Options -->
                     <div id="converterOptions" class="options-group">
-                        <label class="checkbox-inline">
+                        <!-- Go Struct Options -->
+                        <label class="checkbox-inline" id="goStructOptions">
                             <input type="checkbox" id="inlineNestedStructs" checked />
                             <span>内联嵌套</span>
                         </label>
+                        <!-- Protocol Buffer Options -->
+                        <select id="protoNestedMode" class="select hidden">
+                            <option value="separate">独立声明</option>
+                            <option value="inline">嵌套message</option>
+                        </select>
                         <select id="dbType" class="select">
                             <option value="auto">自动检测</option>
                             <option value="mysql">MySQL</option>
@@ -95,7 +101,18 @@
                 <div class="panel">
                     <div class="panel-header">
                         <div class="panel-title">
-                            <span>Go Struct 输出</span>
+                            <span id="outputTitle">输出</span>
+                            <!-- Output format switcher -->
+                            <div class="output-format-switcher">
+                                <label>
+                                    <input type="radio" name="outputFormat" value="go" id="outputFormatGo" checked />
+                                    <span>Go Struct</span>
+                                </label>
+                                <label>
+                                    <input type="radio" name="outputFormat" value="proto" id="outputFormatProto" />
+                                    <span>Protocol Buffer</span>
+                                </label>
+                            </div>
                         </div>
                         <div class="panel-actions">
                             <button id="copyBtn" class="btn-ghost">
@@ -284,10 +301,13 @@
     <script src="parsers/postgresql-parser.js"></script>
     <script src="parsers/sqlite-parser.js"></script>
     <script src="parsers/json-parser.js"></script>
+    <script src="parsers/protobuf-parser.js"></script>
     <script src="utils/type-mapper.js"></script>
+    <script src="utils/protobuf-type-mapper.js"></script>
     <script src="utils/formatter.js"></script>
     <script src="utils/exporter.js"></script>
     <script src="generators/struct-generator.js"></script>
+    <script src="generators/protobuf-generator.js"></script>
     <script src="generators/diff-engine.js"></script>
     <script src="parsers/markdown-renderer.js"></script>
     <script src="utils/chart-exporter.js"></script>

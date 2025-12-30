@@ -90,26 +90,72 @@ function processFieldsForInline(fields, nestedStructs, inlineNestedStructs) {
 
     // Process each field
     return fields.map(field => {
-        // Check if this field's type is a nested struct
+        // Handle normal struct
         if (nestedMap[field.goType]) {
             const nested = nestedMap[field.goType];
-            // Replace type with inline struct definition
             return {
                 ...field,
-                goType: generateInlineStruct(nested)
+                goType: generateInlineStruct(nested, nestedMap, '    ')
             };
         }
+
+        // Handle array of structs
+        if (field.goType.startsWith('[]')) {
+            const innerType = field.goType.substring(2);
+            if (nestedMap[innerType]) {
+                const nested = nestedMap[innerType];
+                return {
+                    ...field,
+                    goType: '[]' + generateInlineStruct(nested, nestedMap, '    ')
+                };
+            }
+        }
+
         return field;
     });
 }
 
 // Generate inline struct definition
-function generateInlineStruct(nestedData) {
+function generateInlineStruct(nestedData, nestedMap, baseIndent = '    ') {
     let code = 'struct {\n';
 
-    const fields = nestedData.fields;
+    // Calculate new indent for fields inside this struct
+    const fieldIndent = baseIndent + '    ';
+
+    // Process fields recursively
+    const fields = nestedData.fields.map(field => {
+        // Handle normal struct
+        if (nestedMap && nestedMap[field.goType]) {
+            const nested = nestedMap[field.goType];
+            return {
+                ...field,
+                goType: generateInlineStruct(nested, nestedMap, fieldIndent)
+            };
+        }
+
+        // Handle array of structs
+        if (field.goType.startsWith('[]')) {
+            const innerType = field.goType.substring(2);
+            if (nestedMap && nestedMap[innerType]) {
+                const nested = nestedMap[innerType];
+                return {
+                    ...field,
+                    goType: '[]' + generateInlineStruct(nested, nestedMap, fieldIndent)
+                };
+            }
+        }
+
+        return field;
+    });
+
     const maxFieldNameLen = Math.max(...fields.map(f => f.goName.length));
-    const maxTypeLen = Math.max(...fields.map(f => f.goType.length));
+
+    // For maxTypeLen, exclude inline structs as they are multi-line and don't need padding
+    // Also exclude array of inline structs which start with '[]struct {'
+    const regularFields = fields.filter(f => !f.goType.includes('struct {'));
+    const maxTypeLen = regularFields.length > 0
+        ? Math.max(...regularFields.map(f => f.goType.length))
+        : 20;
 
     const fieldTags = fields.map(f => `\`json:"${f.jsonName}"\``);
     const maxTagLen = Math.max(...fieldTags.map(t => t.length));
@@ -119,14 +165,24 @@ function generateInlineStruct(nestedData) {
         const tag = fieldTags[i];
 
         const fieldName = field.goName.padEnd(maxFieldNameLen);
-        const fieldType = field.goType.padEnd(maxTypeLen);
-        const tagStr = tag.padEnd(maxTagLen);
-        const comment = field.comment ? ` // ${field.comment}` : '';
 
-        code += `        ${fieldName} ${fieldType} ${tagStr}${comment}\n`;
+        let line = '';
+        if (field.goType.includes('struct {')) {
+            // Inline struct (or array of): don't pad type
+            const fieldType = field.goType;
+            const tagStr = tag;
+            line = `${fieldIndent}${fieldName} ${fieldType} ${tagStr}`;
+        } else {
+            const fieldType = field.goType.padEnd(maxTypeLen);
+            const tagStr = tag.padEnd(maxTagLen);
+            line = `${fieldIndent}${fieldName} ${fieldType} ${tagStr}`;
+        }
+
+        const comment = field.comment ? ` // ${field.comment}` : '';
+        code += `${line}${comment}\n`;
     }
 
-    code += `    }`;
+    code += `${baseIndent}}`;
 
     return code;
 }

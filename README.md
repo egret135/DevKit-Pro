@@ -8,7 +8,12 @@
 
 ### 🔄 DDL/JSON 转换器
 - **多数据库支持**：MySQL、PostgreSQL、SQLite DDL 自动识别
-- **JSON 转换**：支持嵌套对象的 JSON 转 Go struct
+- **JSON 转 Go Struct**：支持嵌套对象的 JSON 转 Go struct
+- **JSON 转 Protocol Buffer**：支持 JSON 转 .proto 文件 message 定义
+  - 智能类型映射（数值类型默认int32、浮点数默认float）
+  - 灵活嵌套模式（嵌套或独立声明message）
+  - 自动字段编号
+  - Proto3语法
 - **智能标签**：自动生成 `json` 和 `gorm` 标签
 - **注释保留**：DDL 中的 COMMENT 自动转为行内注释
 - **TableName 方法**：自动生成 GORM 的 TableName() 方法
@@ -67,6 +72,44 @@ type Users struct {
     ID         int64     `json:"id" gorm:"column:id;primaryKey;autoIncrement"`  // 用户ID
     Username   string    `json:"username" gorm:"column:username;not null"`      // 用户名
     CreateTime time.Time `json:"create_time" gorm:"column:create_time"`         // 创建时间
+}
+```
+
+### JSON 转 Protocol Buffer 示例
+
+**输入**（JSON）：
+```json
+{
+  "id": 1001,
+  "username": "alice",
+  "age": 28,
+  "tags": ["vip", "verified"],
+  "profile": {
+    "avatar": "https://example.com/avatar.png",
+    "bio": "Software Engineer"
+  }
+}
+```
+
+**输出**（独立声明模式）：
+```protobuf
+syntax = "proto3";
+
+package model;
+
+// Profile message
+message Profile {
+  string avatar = 1;
+  string bio    = 2;
+}
+
+// User message
+message User {
+  int32            id       = 1;
+  string           username = 2;
+  int32            age      = 3;
+  repeated string  tags     = 4;
+  Profile          profile  = 5;
 }
 ```
 
