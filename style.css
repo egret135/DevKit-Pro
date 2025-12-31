@@ -217,6 +217,68 @@ body {
     border-bottom: none;
 }
 
+/* DDL面板CodeMirror样式修复 - 确保编辑器内容不会跑到行号左侧 */
+#diffWorkspace .sub-panel .panel-body {
+    position: relative;
+    overflow: hidden;
+}
+
+#diffWorkspace .sub-panel .CodeMirror {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* 确保CodeMirror gutters正确定位在左侧 */
+#diffWorkspace .CodeMirror-gutters {
+    left: 0 !important;
+    position: absolute !important;
+}
+
+/* 确保CodeMirror内容区域在gutters右侧 */
+#diffWorkspace .CodeMirror-sizer {
+    margin-left: 48px !important;
+    border-right-width: 30px !important;
+}
+
+/* 确保代码行正确对齐 */
+#diffWorkspace .CodeMirror-lines {
+    padding-left: 4px;
+}
+
+/* Markdown面板CodeMirror样式修复 - 确保编辑器内容不会跑到行号左侧 */
+#markdownWorkspace .panel .panel-body {
+    position: relative;
+    overflow: hidden;
+}
+
+#markdownWorkspace .panel .CodeMirror {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+}
+
+/* 确保CodeMirror gutters正确定位在左侧 */
+#markdownWorkspace .CodeMirror-gutters {
+    left: 0 !important;
+    position: absolute !important;
+}
+
+/* 确保CodeMirror内容区域在gutters右侧 */
+#markdownWorkspace .CodeMirror-sizer {
+    margin-left: 48px !important;
+    border-right-width: 30px !important;
+}
+
+/* 确保代码行正确对齐 */
+#markdownWorkspace .CodeMirror-lines {
+    padding-left: 4px;
+}
+
 .panel-header.small {
     min-height: 32px;
     padding: var(--space-2) var(--space-6);
@@ -1116,4 +1178,650 @@ body {
 .checkbox-inline.hidden,
 .hidden {
     display: none !important;
+}
+
+/* ==================== Toolbox ==================== */
+.toolbox-workspace {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+.toolbox-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.toolbox-tab {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+.toolbox-tab:hover {
+    background: var(--color-bg-elevated);
+    border-color: var(--color-border-strong);
+    color: var(--color-text-primary);
+}
+
+.toolbox-tab.active {
+    background: var(--color-accent-subtle);
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+}
+
+.tool-icon {
+    font-size: 16px;
+}
+
+.toolbox-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-6);
+    background: var(--color-bg);
+    display: flex;
+    justify-content: center;
+}
+
+.tool-panel {
+    display: none;
+    max-width: 1200px;
+    width: 100%;
+}
+
+.tool-panel.active {
+    display: block;
+}
+
+.tool-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-4);
+    flex-wrap: nowrap;
+    white-space: nowrap;
+}
+
+/* Tech Panel Styles - Futuristic Theme */
+/* Modern Panel Styles - Clean & Professional */
+.tech-panel {
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-lg);
+    padding: var(--space-6);
+    box-shadow: 0 4px 20px rgba(0, 0, 0, 0.05);
+}
+
+.tech-panel .tool-row {
+    border: none;
+    padding: 0;
+    margin-bottom: var(--space-4);
+}
+
+.tech-panel .tool-row.current-time-row {
+    background: #f8fafc;
+    border: 1px solid var(--color-border);
+    border-radius: 16px;
+    padding: var(--space-6);
+    margin-bottom: var(--space-6);
+    justify-content: center;
+    gap: var(--space-4);
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
+}
+
+.tech-label {
+    color: var(--color-text-secondary);
+    font-weight: 600;
+    font-size: 14px;
+    letter-spacing: 0.5px;
+    text-transform: uppercase;
+    margin-right: var(--space-4);
+}
+
+.tech-panel .tool-label {
+    color: var(--color-text-secondary);
+    font-weight: 500;
+}
+
+.tech-panel .tool-input {
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.tech-panel .tool-input:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+}
+
+.tech-panel .tool-select {
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-primary);
+}
+
+/* Redesigned Flip Clock */
+.flip-clock {
+    display: flex;
+    gap: 6px;
+    perspective: 600px;
+    padding: 8px 12px;
+    background: #e2e8f0;
+    border-radius: 12px;
+    box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.1);
+}
+
+.flip-digit {
+    position: relative;
+    width: 40px;
+    height: 60px;
+    font-family: 'JetBrains Mono', 'Menlo', monospace;
+    font-size: 36px;
+    font-weight: 700;
+    background: #1e293b;
+    color: #f8fafc;
+    border-radius: 6px;
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.1);
+    overflow: hidden;
+}
+
+.flip-digit::before {
+    content: '';
+    position: absolute;
+    left: 0;
+    right: 0;
+    top: 50%;
+    height: 1px;
+    background: rgba(0, 0, 0, 0.4);
+    z-index: 10;
+    box-shadow: 0 1px 0 rgba(255, 255, 255, 0.1);
+}
+
+.flip-digit-inner {
+    position: absolute;
+    width: 100%;
+    height: 100%;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    backface-visibility: hidden;
+    line-height: 60px;
+    text-shadow: 0 1px 2px rgba(0, 0, 0, 0.5);
+}
+
+.flip-digit.flipping .flip-digit-inner {
+    animation: flip-animation 0.4s cubic-bezier(0.4, 0.0, 0.2, 1);
+}
+
+@keyframes flip-animation {
+    0% {
+        transform: rotateX(0deg);
+    }
+
+    100% {
+        transform: rotateX(-360deg);
+    }
+}
+
+/* Modern Buttons */
+.tech-btn {
+    height: 36px;
+    padding: 0 16px;
+    background: white;
+    border: 1px solid var(--color-border);
+    color: var(--color-text-secondary);
+    font-weight: 500;
+    border-radius: 8px;
+    transition: all 0.2s cubic-bezier(0.4, 0, 0.2, 1);
+    cursor: pointer;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    font-size: 13px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.05);
+}
+
+.tech-btn:hover {
+    background: #f8fafc;
+    border-color: #cbd5e1;
+    transform: translateY(-1px);
+    box-shadow: 0 4px 6px rgba(0, 0, 0, 0.05);
+    color: var(--color-text-primary);
+}
+
+.tech-btn:active {
+    transform: translateY(0);
+    box-shadow: none;
+    background: #f1f5f9;
+}
+
+#timestampCopyBtn {
+    background: #3b82f6;
+    color: white;
+    border: none;
+    font-weight: 600;
+}
+
+#timestampCopyBtn:hover {
+    background: #2563eb;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+}
+
+.tech-panel .tool-btn-action.primary {
+    background: #3b82f6;
+    border: none;
+    color: white;
+    box-shadow: 0 1px 2px rgba(0, 0, 0, 0.1);
+}
+
+.tech-panel .tool-btn-action.primary:hover {
+    background: #2563eb;
+    box-shadow: 0 4px 8px rgba(37, 99, 235, 0.2);
+}
+
+.tech-panel .date-sep {
+    color: #94a3b8;
+    font-weight: 500;
+    margin: 0 2px;
+}
+
+/* Timestamp Panel Specific Styles */
+#toolPanelTimestamp {
+    height: auto !important;
+    min-height: auto !important;
+    flex: 0 0 auto !important;
+    align-self: flex-start !important;
+}
+
+/* 时间戳面板转换行容器边框 */
+#toolPanelTimestamp>.tool-row:not(.current-time-row) {
+    background: #f8fafc;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: var(--space-4) var(--space-5);
+    box-shadow: inset 0 1px 2px rgba(0, 0, 0, 0.02);
+}
+
+/* 当时间戳面板激活时，让容器高度自适应 */
+.toolbox-content:has(#toolPanelTimestamp.active) {
+    align-items: flex-start;
+}
+
+/* Base64 Panel Specific Styles */
+#toolPanelBase64 {
+    height: auto !important;
+    min-height: auto !important;
+    flex: 0 0 auto !important;
+    align-self: flex-start !important;
+}
+
+/* 当Base64面板激活时，让容器高度自适应 */
+.toolbox-content:has(#toolPanelBase64.active) {
+    align-items: flex-start;
+}
+
+.tech-panel .tool-input {
+    background: #f8fafc;
+    /* Slight off-white */
+    border: 1px solid #cbd5e1;
+    /* Slate-300 */
+    color: #334155;
+    /* Slate-700 */
+    border-radius: 6px;
+    height: 38px;
+    /* Consistent height */
+    padding: 0 12px;
+    transition: all 0.2s ease;
+    font-size: 13px;
+    font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+    /* Monospace for data */
+    flex: 1;
+    min-width: 0;
+}
+
+.tech-panel .tool-input:focus {
+    background: #ffffff;
+    border-color: #3b82f6;
+    box-shadow: none;
+    outline: none;
+}
+
+.tech-panel .tool-input::placeholder {
+    color: #94a3b8;
+    font-family: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
+    /* Sans-serif for placeholder */
+}
+
+.tech-panel .tool-textarea {
+    background: #f8fafc;
+    border: 1px solid #cbd5e1;
+    color: #334155;
+    border-radius: 6px;
+    padding: 12px;
+    transition: all 0.2s ease;
+    font-size: 13px;
+    font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+    flex: 1;
+    min-width: 0;
+    resize: none;
+    /* Disable manual resize */
+    min-height: 80px;
+    width: 100%;
+    box-sizing: border-box;
+}
+
+.tech-panel .tool-textarea:focus {
+    background: #ffffff;
+    border-color: #3b82f6;
+    box-shadow: none;
+    outline: none;
+}
+
+#toolPanelBase64 .tool-textarea {
+    min-height: 160px;
+    height: 160px;
+}
+
+/* URL Panel Specific Styles */
+#toolPanelUrl {
+    height: auto !important;
+    min-height: auto !important;
+    flex: 0 0 auto !important;
+    align-self: flex-start !important;
+}
+
+/* 当URL面板激活时，让容器高度自适应 */
+.toolbox-content:has(#toolPanelUrl.active) {
+    align-items: flex-start;
+}
+
+/* URL面板输入输出框样式与Base64保持一致 */
+#toolPanelUrl .tool-textarea {
+    min-height: 160px;
+    height: 160px;
+}
+
+/* JWT Panel Specific Styles */
+#toolPanelJwt {
+    height: auto !important;
+    min-height: auto !important;
+    flex: 0 0 auto !important;
+    align-self: flex-start !important;
+}
+
+/* 当JWT面板激活时，让容器高度自适应 */
+.toolbox-content:has(#toolPanelJwt.active) {
+    align-items: flex-start;
+}
+
+/* JWT面板输入框样式与Base64保持一致 */
+#toolPanelJwt #jwtInput {
+    min-height: 160px;
+    height: 160px;
+}
+
+/* JWT Header高度翻倍后再增加50% (80px -> 120px) */
+#toolPanelJwt #jwtHeader {
+    min-height: 120px;
+    height: 120px;
+}
+
+/* JWT Payload高度翻倍后再增加50% (160px -> 240px) */
+#toolPanelJwt #jwtPayload {
+    min-height: 240px;
+    height: 240px;
+}
+
+/* Hash Panel Specific Styles */
+#toolPanelHash {
+    height: auto !important;
+    min-height: auto !important;
+    flex: 0 0 auto !important;
+    align-self: flex-start !important;
+}
+
+/* 当哈希面板激活时，让容器高度自适应 */
+.toolbox-content:has(#toolPanelHash.active) {
+    align-items: flex-start;
+}
+
+/* 哈希面板输入框高度翻倍 */
+#toolPanelHash #hashInput {
+    min-height: 160px;
+    height: 160px;
+}
+
+/* 哈希结果高度翻倍 (38px -> 76px)，鼠标指针样式 */
+#toolPanelHash #hashMd5,
+#toolPanelHash #hashSha1,
+#toolPanelHash #hashSha256,
+#toolPanelHash #hashSha512 {
+    height: 76px;
+    cursor: pointer;
+    transition: all 0.2s ease;
+}
+
+/* 哈希结果悬停效果 */
+#toolPanelHash #hashMd5:hover,
+#toolPanelHash #hashSha1:hover,
+#toolPanelHash #hashSha256:hover,
+#toolPanelHash #hashSha512:hover {
+    background: #e2e8f0;
+    border-color: #94a3b8;
+}
+
+/* UUID/ID Panel Specific Styles */
+#toolPanelUuid {
+    height: auto !important;
+    min-height: auto !important;
+    flex: 0 0 auto !important;
+    align-self: flex-start !important;
+}
+
+/* 当ID生成面板激活时，让容器高度自适应 */
+.toolbox-content:has(#toolPanelUuid.active) {
+    align-items: flex-start;
+}
+
+/* ID生成面板输出框高度翻倍 (320px -> 640px)，行距增大，字体增大 */
+#toolPanelUuid #uuidOutput {
+    min-height: 640px;
+    height: 640px;
+    line-height: 2.2;
+    font-size: 15px;
+}
+
+/* UUID输出容器 - flex布局 */
+#toolPanelUuid .uuid-output-container {
+    display: flex;
+    align-items: stretch;
+    gap: 0;
+}
+
+/* UUID行号列 */
+#toolPanelUuid .uuid-line-numbers {
+    min-width: 50px;
+    max-width: 50px;
+    min-height: 640px;
+    height: 640px;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    border-right: none;
+    border-radius: 6px 0 0 6px;
+    padding: 12px 8px;
+    font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 15px;
+    line-height: 2.2;
+    color: #64748b;
+    text-align: right;
+    user-select: none;
+    overflow-y: hidden;
+}
+
+/* 调整输出框左侧圆角 */
+#toolPanelUuid .uuid-output-container #uuidOutput {
+    border-radius: 0 6px 6px 0;
+    flex: 1;
+}
+
+/* 输出框聚焦时移除蓝色边框 */
+#toolPanelUuid #uuidOutput:focus {
+    border-color: #cbd5e1;
+    box-shadow: none;
+    outline: none;
+}
+
+.tech-panel .tool-textarea.small {
+    min-height: 40px;
+    height: 40px;
+}
+
+/* Result Input (Read-only) */
+.tool-input.result {
+    background: #f1f5f9;
+    /* Slate-100 */
+    border-color: #e2e8f0;
+    color: #475569;
+    cursor: default;
+    font-weight: 500;
+    flex: 1;
+    /* Match flex behavior */
+    min-width: 0;
+}
+
+.tool-input.result:focus {
+    background: #f1f5f9;
+    box-shadow: none;
+    border-color: #cbd5e1;
+}
+
+/* Select Dropdown */
+.tech-panel .tool-select {
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    color: #334155;
+    border-radius: 6px;
+    height: 38px;
+    padding: 0 32px 0 12px;
+    /* Space for arrow */
+    cursor: pointer;
+    font-size: 13px;
+    appearance: none;
+    background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' fill='none' viewBox='0 0 24 24' stroke='%2364748b'%3E%3Cpath stroke-linecap='round' stroke-linejoin='round' stroke-width='2' d='M19 9l-7 7-7-7'%3E%3C/path%3E%3C/svg%3E");
+    background-repeat: no-repeat;
+    background-position: right 8px center;
+    background-size: 16px;
+    min-width: 80px;
+    transition: all 0.2s ease;
+}
+
+.tech-panel .tool-select:hover {
+    border-color: #94a3b8;
+}
+
+.tech-panel .tool-select:focus {
+    border-color: #3b82f6;
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+    outline: none;
+}
+
+/* Date Parts Inputs (Small) */
+.tool-input.small {
+    width: 60px;
+    min-width: 60px;
+    text-align: center;
+    padding: 0 4px;
+    height: 38px;
+    font-weight: 500;
+}
+
+.tool-btn-action {
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-bg-elevated);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-size: 13px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    white-space: nowrap;
+}
+
+.tool-btn-action:hover {
+    background: var(--color-bg-secondary);
+    border-color: var(--color-border-strong);
+    color: var(--color-text-primary);
+}
+
+.tool-btn-action.primary {
+    background: var(--color-accent);
+    border-color: var(--color-accent);
+    color: white;
+}
+
+.tool-btn-action.primary:hover {
+    background: var(--color-accent-hover);
+    border-color: var(--color-accent-hover);
+}
+
+.date-sep {
+    font-size: 13px;
+    color: var(--color-text-tertiary);
+}
+
+.date-parts-row {
+    flex-wrap: nowrap;
+    justify-content: space-between;
+}
+
+.date-parts-row .tool-label {
+    min-width: 50px;
+}
+
+.date-parts-row .tool-input.result {
+    min-width: 140px;
+    flex: 0 0 auto;
+}
+
+.tool-textarea {
+    width: 100%;
+    min-height: 120px;
+    padding: var(--space-3);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--color-text-primary);
+    resize: vertical;
+}
+
+.tool-textarea:focus {
+    outline: none;
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.tool-textarea.small {
+    min-height: 80px;
+}
+
+.tool-textarea[readonly] {
+    background: var(--color-bg);
 }

@@ -30,9 +30,13 @@
         // Output Format Elements
         outputFormatGo: document.getElementById('outputFormatGo'),
         outputFormatProto: document.getElementById('outputFormatProto'),
+        outputFormatJSON: document.getElementById('outputFormatJSON'),
+        outputFormatYAML: document.getElementById('outputFormatYAML'),
+        outputFormatTOML: document.getElementById('outputFormatTOML'),
         outputTitle: document.getElementById('outputTitle'),
         protoNestedMode: document.getElementById('protoNestedMode'),
         goStructOptions: document.getElementById('goStructOptions'),
+        configFormatLabels: document.querySelectorAll('.config-format'),
 
         // Diff Elements
         diffTargetInput: document.getElementById('diffTargetInput'),
@@ -45,9 +49,11 @@
         modeConverter: document.getElementById('modeConverter'),
         modeDiff: document.getElementById('modeDiff'),
         modeMarkdown: document.getElementById('modeMarkdown'),
+        modeToolbox: document.getElementById('modeToolbox'),
         converterWorkspace: document.getElementById('converterWorkspace'),
         diffWorkspace: document.getElementById('diffWorkspace'),
         markdownWorkspace: document.getElementById('markdownWorkspace'),
+        toolboxWorkspace: document.getElementById('toolboxWorkspace'),
 
         // Markdown Elements
         markdownInput: document.getElementById('markdownInput'),
@@ -57,17 +63,30 @@
         exportMarkdownDropdown: document.getElementById('exportMarkdownDropdown'),
         exportMarkdownBtn: document.getElementById('exportMarkdownBtn'),
 
+        // Toolbox Elements
+        toolboxInput: document.getElementById('toolboxInput'),
+        toolboxOutput: document.getElementById('toolboxOutput'),
+        toolboxOutputTitle: document.getElementById('toolboxOutputTitle'),
+        clearToolboxBtn: document.getElementById('clearToolboxBtn'),
+        copyToolboxBtn: document.getElementById('copyToolboxBtn'),
+        toolList: document.querySelector('.tool-list'),
+
         // Appearance
         editorTheme: document.getElementById('editorTheme'),
-        editorFont: document.getElementById('editorFont')
+        editorFont: document.getElementById('editorFont'),
+
+        // Formatting
+        autoFormat: document.getElementById('autoFormat'),
+        formatIndent: document.getElementById('formatIndent')
     };
 
     // State
     let currentSettings = null;
     let lastParsedData = null;
     let lastGeneratedCode = '';
-    let currentMode = 'converter'; // 'converter', 'diff', or 'markdown'
+    let currentMode = 'converter'; // 'converter', 'diff', 'markdown', or 'toolbox'
     let lastRenderedHtml = '';
+    let currentTool = 'timestamp';
 
     // Initialize
     async function init() {
@@ -108,50 +127,64 @@
             editorManager.setFont(currentSettings.editorFont);
         }
 
-        // Load History
-        const savedInput = historyManager.load('inputArea', '');
-        if (savedInput) {
-            editorManager.setValue('inputArea', savedInput);
-            handleInputChange(); // Trigger detection
-        }
+        // Load History - DISABLED: 不再加载历史记录，刷新后展示空白
+        // const savedInput = historyManager.load('inputArea', '');
+        // if (savedInput) {
+        //     editorManager.setValue('inputArea', savedInput);
+        //     handleInputChange(); // Trigger detection
+        // }
 
-        const savedDiffTarget = historyManager.load('diffTargetInput', '');
-        if (savedDiffTarget) editorManager.setValue('diffTargetInput', savedDiffTarget);
+        // const savedDiffTarget = historyManager.load('diffTargetInput', '');
+        // if (savedDiffTarget) editorManager.setValue('diffTargetInput', savedDiffTarget);
 
-        const savedDiffSource = historyManager.load('diffSourceInput', '');
-        if (savedDiffSource) editorManager.setValue('diffSourceInput', savedDiffSource);
+        // const savedDiffSource = historyManager.load('diffSourceInput', '');
+        // if (savedDiffSource) editorManager.setValue('diffSourceInput', savedDiffSource);
 
-        const savedMarkdown = historyManager.load('markdownInput', '');
-        if (savedMarkdown) {
-            editorManager.setValue('markdownInput', savedMarkdown);
-            // Don't render immediately on load to improve startup, or maybe do?
-            // Let's render if content exists
-            handleMarkdownChange();
-        }
+        // const savedMarkdown = historyManager.load('markdownInput', '');
+        // if (savedMarkdown) {
+        //     editorManager.setValue('markdownInput', savedMarkdown);
+        //     handleMarkdownChange();
+        // }
+
+        // Debounced auto-format (if 'always' mode)
+        const debouncedAutoFormat = debounce(() => {
+            if (currentSettings.autoFormat === 'always') {
+                autoFormatInput();
+            }
+        }, 1500);
 
         // Attach Editor Listeners
         inputEditor.on('change', () => {
             handleInputChange();
-            historyManager.save('inputArea', inputEditor.getValue());
+            // historyManager.save('inputArea', inputEditor.getValue()); // DISABLED
+            // Trigger debounced auto-format
+            debouncedAutoFormat();
         });
 
-        // Debounce history save for others
-        const saveDiffTarget = historyManager.debounce((val) => historyManager.save('diffTargetInput', val), 1000);
+        // Auto-format on paste (if enabled)
+        inputEditor.on('paste', () => {
+            if (currentSettings.autoFormat === 'paste' || currentSettings.autoFormat === 'always') {
+                setTimeout(() => autoFormatInput(), 50);
+            }
+        });
+
+        // Debounce history save for others - DISABLED
+        // const saveDiffTarget = historyManager.debounce((val) => historyManager.save('diffTargetInput', val), 1000);
         diffTargetEditor.on('change', () => {
             handleDiffChange();
-            saveDiffTarget(diffTargetEditor.getValue());
+            // saveDiffTarget(diffTargetEditor.getValue()); // DISABLED
         });
 
-        const saveDiffSource = historyManager.debounce((val) => historyManager.save('diffSourceInput', val), 1000);
+        // const saveDiffSource = historyManager.debounce((val) => historyManager.save('diffSourceInput', val), 1000);
         diffSourceEditor.on('change', () => {
             handleDiffChange();
-            saveDiffSource(diffSourceEditor.getValue());
+            // saveDiffSource(diffSourceEditor.getValue()); // DISABLED
         });
 
-        const saveMarkdown = historyManager.debounce((val) => historyManager.save('markdownInput', val), 1000);
+        // const saveMarkdown = historyManager.debounce((val) => historyManager.save('markdownInput', val), 1000);
         markdownEditor.on('change', () => {
             handleMarkdownChange();
-            saveMarkdown(markdownEditor.getValue());
+            // saveMarkdown(markdownEditor.getValue()); // DISABLED
         });
 
 
@@ -170,6 +203,9 @@
         // Output format switcher
         elements.outputFormatGo.addEventListener('change', handleOutputFormatChange);
         elements.outputFormatProto.addEventListener('change', handleOutputFormatChange);
+        if (elements.outputFormatJSON) elements.outputFormatJSON.addEventListener('change', handleOutputFormatChange);
+        if (elements.outputFormatYAML) elements.outputFormatYAML.addEventListener('change', handleOutputFormatChange);
+        if (elements.outputFormatTOML) elements.outputFormatTOML.addEventListener('change', handleOutputFormatChange);
         elements.protoNestedMode.addEventListener('change', handleProtoNestedModeChange);
 
         // Attach event listeners - Diff
@@ -193,6 +229,10 @@
         elements.exportMarkdownBtn.addEventListener('click', toggleExportDropdown);
         elements.exportMarkdownDropdown.addEventListener('click', handleMarkdownExport);
         document.addEventListener('click', closeExportDropdown);
+
+        // Attach event listeners - Toolbox
+        elements.modeToolbox.addEventListener('click', () => switchMode('toolbox'));
+        // Note: Toolbox tool-specific event handlers are now in tools/toolbox.js
 
         // Appearance Settings Listeners (Immediate Preview)
         elements.editorTheme.addEventListener('change', () => {
@@ -233,9 +273,11 @@
         elements.modeConverter.classList.remove('active');
         elements.modeDiff.classList.remove('active');
         elements.modeMarkdown.classList.remove('active');
+        if (elements.modeToolbox) elements.modeToolbox.classList.remove('active');
         elements.converterWorkspace.classList.add('hidden');
         elements.diffWorkspace.classList.add('hidden');
         elements.markdownWorkspace.classList.add('hidden');
+        if (elements.toolboxWorkspace) elements.toolboxWorkspace.classList.add('hidden');
 
         if (mode === 'converter') {
             elements.modeConverter.classList.add('active');
@@ -252,6 +294,13 @@
             elements.markdownWorkspace.classList.remove('hidden');
             elements.converterOptions.style.visibility = 'hidden';
             setStatus('Markdown 预览模式', 'ready');
+        } else if (mode === 'toolbox') {
+            elements.modeToolbox.classList.add('active');
+            elements.toolboxWorkspace.classList.remove('hidden');
+            elements.converterOptions.style.visibility = 'hidden';
+            setStatus('开发者工具箱', 'ready');
+            // Trigger initial tool processing
+            handleToolboxInput();
         }
     }
 
@@ -303,8 +352,8 @@
         editorManager.setValue('diffTargetInput', '');
         editorManager.setValue('diffSourceInput', '');
         editorManager.setValue('diffOutputArea', '-- 在左侧分别输入新旧 DDL\n-- 将自动生成 ALTER 语句');
-        historyManager.save('diffTargetInput', '');
-        historyManager.save('diffSourceInput', '');
+        // historyManager.save('diffTargetInput', ''); // DISABLED
+        // historyManager.save('diffSourceInput', ''); // DISABLED
         setStatus('Diff 已清空', 'ready');
     }
 
@@ -345,7 +394,7 @@
 
     function handleClearMarkdown() {
         editorManager.setValue('markdownInput', '');
-        historyManager.save('markdownInput', '');
+        // historyManager.save('markdownInput', ''); // DISABLED
         elements.markdownPreview.innerHTML = '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
         lastRenderedHtml = '';
         setStatus('Markdown 已清除', 'ready');
@@ -474,10 +523,88 @@
         if (elements.dbType.value === 'auto') {
             const detectedType = detectInputType(input);
             updateInputTypeBadge(detectedType);
+
+            // Show/hide config format options based on input type
+            updateConfigFormatVisibility(detectedType);
         }
 
         // Trigger auto-conversion
         debouncedConvert();
+    }
+
+    // Show/hide config format output options based on input type
+    function updateConfigFormatVisibility(inputType) {
+        const isConfigFormat = ['json', 'yaml', 'toml', 'xml'].includes(inputType);
+
+        elements.configFormatLabels.forEach(label => {
+            if (isConfigFormat) {
+                label.classList.remove('hidden');
+            } else {
+                label.classList.add('hidden');
+            }
+        });
+    }
+
+    // Auto-format input content
+    let isFormatting = false; // Flag to prevent infinite loop
+
+    function autoFormatInput() {
+        if (currentSettings.autoFormat === 'never') return;
+        if (isFormatting) return; // Prevent recursive formatting
+
+        const input = editorManager.getValue('inputArea');
+        if (!input || input.trim().length < 10) return;
+
+        // Detect type
+        let inputType = elements.dbType.value;
+        if (inputType === 'auto') {
+            inputType = detectInputType(input);
+        }
+
+        // Only format JSON and SQL types
+        if (!['json', 'mysql', 'postgresql', 'sqlite'].includes(inputType)) {
+            return;
+        }
+
+        try {
+            const indent = currentSettings.formatIndent === 'tab' ? 'tab' : (currentSettings.formatIndent || 4);
+            const formatted = AutoFormatter.format(input, inputType, {
+                indent: indent === 'tab' ? 1 : indent,
+                useTabs: indent === 'tab'
+            });
+
+            // Compare normalized versions (remove all whitespace)
+            const normalizeForCompare = (s) => s.replace(/\s+/g, '');
+            const inputNormalized = normalizeForCompare(input);
+            const formattedNormalized = normalizeForCompare(formatted);
+
+            // Only update if the data is the same but formatting differs
+            if (formatted && inputNormalized === formattedNormalized && formatted !== input) {
+                isFormatting = true; // Set flag before updating
+
+                // Get cursor position before formatting
+                const editor = editorManager.editors.get('inputArea');
+                const cursor = editor ? editor.getCursor() : null;
+
+                editorManager.setValue('inputArea', formatted);
+
+                // Try to restore cursor position
+                if (editor && cursor) {
+                    try {
+                        editor.setCursor(cursor);
+                    } catch (e) {
+                        // Cursor position may be invalid after formatting
+                    }
+                }
+
+                setStatus('已自动格式化', 'success');
+
+                // Reset flag after a short delay
+                setTimeout(() => { isFormatting = false; }, 100);
+            }
+        } catch (e) {
+            console.warn('Auto-format error:', e.message);
+        }
     }
 
     // Handle database type change
@@ -532,6 +659,9 @@
             'postgresql': 'PostgreSQL',
             'sqlite': 'SQLite',
             'json': 'JSON',
+            'yaml': 'YAML',
+            'toml': 'TOML',
+            'xml': 'XML',
             'unknown': '未知'
         };
 
@@ -542,6 +672,20 @@
         } else {
             elements.inputType.classList.remove('detected');
         }
+
+        // Update input editor syntax highlighting
+        const modeMap = {
+            'mysql': 'sql',
+            'postgresql': 'sql',
+            'sqlite': 'sql',
+            'json': 'json',
+            'yaml': 'yaml',
+            'toml': 'toml',
+            'xml': 'xml'
+        };
+
+        const mode = modeMap[type] || 'sql';
+        editorManager.setMode('inputArea', mode);
     }
 
     // Handle convert button click
@@ -564,6 +708,7 @@
 
             // Parse based on type
             let parsedData;
+            let configData = null; // For config format conversions
 
             switch (inputType) {
                 case 'mysql':
@@ -578,13 +723,48 @@
                 case 'json':
                     const structName = currentSettings.structName || 'Response';
                     parsedData = parseJSON(input, structName);
+                    // Also store raw data for config conversions
+                    try {
+                        configData = JSON.parse(input);
+                    } catch (e) { }
+                    break;
+                case 'yaml':
+                    if (typeof parseYAML !== 'undefined') {
+                        const yamlResult = parseYAML(input);
+                        if (yamlResult.error) throw new Error(yamlResult.error);
+                        configData = yamlResult.data;
+                        // Create parsedData for Go struct
+                        parsedData = parseJSON(JSON.stringify(configData), currentSettings.structName || 'Config');
+                    } else {
+                        throw new Error('YAML parser not loaded');
+                    }
+                    break;
+                case 'toml':
+                    if (typeof parseTOML !== 'undefined') {
+                        const tomlResult = parseTOML(input);
+                        if (tomlResult.error) throw new Error(tomlResult.error);
+                        configData = tomlResult.data;
+                        parsedData = parseJSON(JSON.stringify(configData), currentSettings.structName || 'Config');
+                    } else {
+                        throw new Error('TOML parser not loaded');
+                    }
+                    break;
+                case 'xml':
+                    if (typeof parseXML !== 'undefined') {
+                        const xmlResult = parseXML(input);
+                        if (xmlResult.error) throw new Error(xmlResult.error);
+                        configData = xmlResult.data;
+                        parsedData = parseJSON(JSON.stringify(configData), currentSettings.structName || 'Config');
+                    } else {
+                        throw new Error('XML parser not loaded');
+                    }
                     break;
                 default:
                     throw new Error('无法识别输入类型');
             }
 
             // Check for parsing errors
-            if (parsedData.error) {
+            if (parsedData && parsedData.error) {
                 throw new Error(parsedData.error);
             }
 
@@ -592,15 +772,23 @@
             lastParsedData = parsedData;
 
             // Determine output format
-            const outputFormat = elements.outputFormatProto.checked ? 'proto' : 'go';
+            let outputFormat = 'go';
+            if (elements.outputFormatProto.checked) outputFormat = 'proto';
+            else if (elements.outputFormatJSON && elements.outputFormatJSON.checked) outputFormat = 'json';
+            else if (elements.outputFormatYAML && elements.outputFormatYAML.checked) outputFormat = 'yaml';
+            else if (elements.outputFormatTOML && elements.outputFormatTOML.checked) outputFormat = 'toml';
 
             let generatedCode;
+            const indent = currentSettings.formatIndent === 'tab' ? 2 : (currentSettings.formatIndent || 4);
 
             if (outputFormat === 'proto') {
                 // Generate Protocol Buffer message
-                if (inputType !== 'json') {
-                    throw new Error('Protocol Buffer 仅支持 JSON 输入');
+                if (!['json', 'yaml', 'toml', 'xml'].includes(inputType)) {
+                    throw new Error('Protocol Buffer 仅支持 JSON/YAML/TOML/XML 输入');
                 }
+
+                const dataForProto = configData || (parsedData ? parsedData.data : null);
+                if (!dataForProto) throw new Error('无法解析输入数据');
 
                 const protoOptions = {
                     messageName: currentSettings.structName || 'Message',
@@ -612,12 +800,35 @@
                 };
 
                 // Parse JSON for Protocol Buffer (adds field numbers)
-                const protoParsedData = parseJSONForProtobuf(input, protoOptions.messageName);
+                const protoParsedData = parseJSONForProtobuf(JSON.stringify(dataForProto), protoOptions.messageName);
                 if (protoParsedData.error) {
                     throw new Error(protoParsedData.error);
                 }
 
                 generatedCode = generateProtoMessage(protoParsedData, protoOptions);
+                editorManager.setMode('outputArea', 'proto');
+
+            } else if (['json', 'yaml', 'toml'].includes(outputFormat)) {
+                // Config format conversion
+                const dataToConvert = configData || (inputType === 'json' ? JSON.parse(input) : null);
+                if (!dataToConvert) {
+                    throw new Error('无法获取数据进行转换');
+                }
+
+                switch (outputFormat) {
+                    case 'json':
+                        generatedCode = ConfigGenerator.generateJSON(dataToConvert, { indent });
+                        editorManager.setMode('outputArea', 'json');
+                        break;
+                    case 'yaml':
+                        generatedCode = ConfigGenerator.generateYAML(dataToConvert, { indent });
+                        editorManager.setMode('outputArea', 'yaml');
+                        break;
+                    case 'toml':
+                        generatedCode = ConfigGenerator.generateTOML(dataToConvert, { indent });
+                        editorManager.setMode('outputArea', 'toml');
+                        break;
+                }
 
             } else {
                 // Generate Go struct (existing logic)
@@ -629,6 +840,7 @@
                     inputType: inputType  // Pass input type to control tag generation
                 };
                 generatedCode = generateGoStruct(parsedData, options);
+                editorManager.setMode('outputArea', 'go');
             }
 
             lastGeneratedCode = generatedCode;
@@ -730,7 +942,7 @@
     // Handle clear button click
     function handleClear() {
         editorManager.setValue('inputArea', '');
-        historyManager.save('inputArea', '');
+        // historyManager.save('inputArea', ''); // DISABLED
         editorManager.setValue('outputArea', '// 在左侧输入 DDL 或 JSON，点击"转换"按钮生成 Go struct');
         lastParsedData = null;
         lastGeneratedCode = '';
@@ -749,6 +961,10 @@
         // Appearance
         currentSettings.editorTheme = elements.editorTheme.value;
         currentSettings.editorFont = elements.editorFont.value;
+
+        // Formatting
+        currentSettings.autoFormat = elements.autoFormat.value;
+        currentSettings.formatIndent = elements.formatIndent.value === 'tab' ? 'tab' : parseInt(elements.formatIndent.value);
 
         // inlineNestedStructs is handled separately in the header
 
@@ -773,6 +989,10 @@
         // Appearance
         elements.editorTheme.value = currentSettings.editorTheme || 'dracula';
         elements.editorFont.value = currentSettings.editorFont || "'JetBrains Mono', monospace";
+
+        // Formatting
+        elements.autoFormat.value = currentSettings.autoFormat || 'always';
+        elements.formatIndent.value = currentSettings.formatIndent === 'tab' ? 'tab' : (currentSettings.formatIndent || 4).toString();
     }
     // Show/hide modal
     function showModal(show) {
@@ -799,6 +1019,108 @@
     function updateLineCount(text) {
         const lines = text ? text.split('\n').length : 0;
         elements.lineCount.textContent = `${lines} 行`;
+    }
+
+    // ==================== Toolbox Handlers ====================
+
+    // Handle tool selection
+    function handleToolSelect(e) {
+        const btn = e.target.closest('.tool-btn');
+        if (!btn) return;
+
+        const tool = btn.dataset.tool;
+        if (!tool) return;
+
+        // Update active state
+        document.querySelectorAll('.tool-btn').forEach(b => b.classList.remove('active'));
+        btn.classList.add('active');
+
+        currentTool = tool;
+
+        // Update output title
+        const toolNames = {
+            timestamp: '时间戳转换',
+            base64: 'Base64 编解码',
+            url: 'URL 编解码',
+            jwt: 'JWT 解析',
+            hash: '哈希计算',
+            uuid: 'ID 生成器'
+        };
+        if (elements.toolboxOutputTitle) {
+            elements.toolboxOutputTitle.textContent = toolNames[tool] || '结果';
+        }
+
+        // Process with new tool
+        handleToolboxInput();
+    }
+
+    // Handle toolbox input
+    async function handleToolboxInput() {
+        const input = elements.toolboxInput ? elements.toolboxInput.value : '';
+
+        try {
+            const results = await Toolbox.process(currentTool, input);
+            const html = Toolbox.renderResults(results);
+            if (elements.toolboxOutput) {
+                elements.toolboxOutput.innerHTML = html;
+            }
+        } catch (error) {
+            if (elements.toolboxOutput) {
+                elements.toolboxOutput.innerHTML = `<div class="result-section">
+                    <div class="result-label">错误</div>
+                    <div class="result-value error">${error.message}</div>
+                </div>`;
+            }
+        }
+    }
+
+    // Handle clear toolbox
+    function handleClearToolbox() {
+        if (elements.toolboxInput) {
+            elements.toolboxInput.value = '';
+        }
+        if (elements.toolboxOutput) {
+            elements.toolboxOutput.innerHTML = '<p class="placeholder">选择工具并输入内容...</p>';
+        }
+        setStatus('已清除', 'ready');
+    }
+
+    // Handle copy toolbox result
+    function handleCopyToolbox() {
+        if (!elements.toolboxOutput) return;
+
+        // Get all result values
+        const values = Array.from(elements.toolboxOutput.querySelectorAll('.result-value'))
+            .map(el => el.textContent)
+            .join('\n\n');
+
+        if (!values) {
+            setStatus('没有可复制的内容', 'error');
+            return;
+        }
+
+        // Copy to clipboard
+        navigator.clipboard.writeText(values).then(() => {
+            setStatus('已复制到剪贴板', 'success');
+            elements.copyToolboxBtn.classList.add('copied');
+            setTimeout(() => elements.copyToolboxBtn.classList.remove('copied'), 600);
+        }).catch(() => {
+            setStatus('复制失败', 'error');
+        });
+    }
+
+    // Handle clicks in toolbox output (for copy buttons)
+    function handleToolboxOutputClick(e) {
+        const copyBtn = e.target.closest('.copy-btn');
+        if (!copyBtn) return;
+
+        const value = copyBtn.dataset.value;
+        if (!value) return;
+
+        navigator.clipboard.writeText(value).then(() => {
+            copyBtn.textContent = '已复制';
+            setTimeout(() => copyBtn.textContent = '复制', 1000);
+        });
     }
 
     // Handle keyboard shortcuts

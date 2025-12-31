@@ -106,11 +106,22 @@ class EditorManager {
             case 'mysql':
             case 'postgresql':
             case 'sqlite':
-                return 'text/x-sql'; // Generic SQL for now, or specific MIME types if loaded
+            case 'sql':
+                return 'text/x-sql';
             case 'go':
                 return 'text/x-go';
             case 'proto':
-                return 'text/x-protobuf'; // Note: Requires protobuf mode to be loaded, fallback to simple mode otherwise
+            case 'protobuf':
+                return 'text/x-protobuf';
+            case 'yaml':
+                return 'text/x-yaml';
+            case 'xml':
+                return 'application/xml';
+            case 'toml':
+                return 'text/x-toml';
+            case 'markdown':
+            case 'md':
+                return 'text/x-markdown';
             default:
                 return mode;
         }

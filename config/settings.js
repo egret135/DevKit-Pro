@@ -9,7 +9,9 @@ const Settings = {
         generateTableName: true,
         theme: 'dark',
         editorTheme: 'dracula',
-        editorFont: "'JetBrains Mono', monospace"
+        editorFont: "'JetBrains Mono', monospace",
+        autoFormat: 'always',  // 'always', 'paste', 'never'
+        formatIndent: 4        // 2, 4, or 'tab'
     },
 
     // Load settings from chrome.storage

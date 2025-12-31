@@ -24,7 +24,6 @@
   - 深色模式：Dracula (默认)、Material、Monokai
   - 浅色模式：Eclipse、Neo
 - **字体选择**：JetBrains Mono、Fira Code、Source Code Pro
-- **本地历史**：自动保存输入内容，防止意外丢失
 
 ### ⚖️ DDL 差异对比
 - 对比新旧 DDL 差异
@@ -37,6 +36,27 @@
 - **Mermaid 图表导出**：单独导出为 SVG/PNG
 - **整页导出**：将整个预览内容导出为 PNG/JPG/SVG
 - Typora 风格的渲染样式
+
+### 🛠️ 开发者工具箱
+集成常用开发工具，一站式解决日常需求：
+- **时间戳转换**：Unix 时间戳 (秒/毫秒) ↔️ 日期时间，支持多时区
+- **Base64 编解码**：文本与 Base64 互转
+- **URL 编解码**：URL 参数编码与解码
+- **JWT 解析**：解析 JWT Token，显示 Header/Payload/过期状态
+- **哈希计算**：MD5、SHA-1、SHA-256、SHA-512
+- **ID 生成器**：批量生成 UUID v4、Snowflake ID、NanoID
+
+### 📄 配置文件转换
+支持多种配置格式互相转换：
+- JSON ↔️ YAML ↔️ TOML ↔️ XML
+- 输入任意格式，一键转换为目标格式
+- 也可转为 Go Struct 或 Protocol Buffer
+
+### ✨ 自动格式化
+- 粘贴或输入后自动美化代码
+- 支持 JSON、SQL (MySQL/PostgreSQL/SQLite)
+- 可配置缩进（2空格、4空格、Tab）
+- 可选择触发时机（总是/仅粘贴时/从不）
 
 ## 🚀 安装
 
@@ -58,10 +78,11 @@
 
 ### 模式切换
 
-点击顶部切换按钮在三种模式间切换：
-- **转换器**：DDL/JSON 转 Go Struct
+点击顶部切换按钮在四种模式间切换：
+- **转换器**：DDL/JSON 转 Go Struct / Protocol Buffer
 - **DDL 对比**：生成 ALTER 语句
 - **Markdown**：预览与导出
+- **工具箱**：时间戳、Base64、URL、JWT、哈希、ID生成
 
 ### 编辑器设置
 
@@ -165,11 +186,16 @@ devkit-pro/
 ├── index.html              # 主界面
 ├── app.js                  # 主逻辑
 ├── style.css               # 样式
+├── manifest.json           # 扩展配置
 ├── lib/                    # 第三方库
 │   ├── codemirror/         # 编辑器核心及模式
 │   ├── marked.min.js
 │   ├── mermaid.min.js
-│   └── html2canvas.min.js
+│   ├── html2canvas.min.js
+│   ├── sql-formatter.min.js
+│   ├── js-yaml.min.js
+│   ├── toml.min.js
+│   └── fast-xml-parser.min.js
 ├── parsers/                # 解析器
 │   ├── detector.js
 │   ├── mysql-parser.js
@@ -177,20 +203,27 @@ devkit-pro/
 │   ├── sqlite-parser.js
 │   ├── json-parser.js
 │   ├── protobuf-parser.js
+│   ├── yaml-parser.js
+│   ├── toml-parser.js
+│   ├── xml-parser.js
 │   └── markdown-renderer.js
 ├── generators/
 │   ├── struct-generator.js
 │   ├── protobuf-generator.js
+│   ├── config-generator.js
 │   └── diff-engine.js
 ├── utils/
 │   ├── editor-manager.js   # 编辑器管理
-│   ├── history-manager.js  # 本地历史管理
+│   ├── history-manager.js  # 历史管理(已禁用)
 │   ├── type-mapper.js
 │   ├── protobuf-type-mapper.js
 │   ├── formatter.js
 │   ├── exporter.js
 │   ├── chart-exporter.js
-│   └── markdown-exporter.js
+│   ├── markdown-exporter.js
+│   └── auto-formatter.js
+├── tools/
+│   └── toolbox.js          # 开发者工具箱
 └── config/
     └── settings.js
 ```
