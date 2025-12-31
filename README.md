@@ -18,6 +18,14 @@
 - **注释保留**：DDL 中的 COMMENT 自动转为行内注释
 - **TableName 方法**：自动生成 GORM 的 TableName() 方法
 
+### 🎨 极致的编辑体验
+- **语法高亮**：基于 CodeMirror 5，支持 SQL、Go、Markdown、JSON 等多种语言
+- **主题切换**：
+  - 深色模式：Dracula (默认)、Material、Monokai
+  - 浅色模式：Eclipse、Neo
+- **字体选择**：JetBrains Mono、Fira Code、Source Code Pro
+- **本地历史**：自动保存输入内容，防止意外丢失
+
 ### ⚖️ DDL 差异对比
 - 对比新旧 DDL 差异
 - 自动生成 ALTER TABLE 语句
@@ -54,6 +62,12 @@
 - **转换器**：DDL/JSON 转 Go Struct
 - **DDL 对比**：生成 ALTER 语句
 - **Markdown**：预览与导出
+
+### 编辑器设置
+
+点击顶部的 ⚙️ 图标可以打开设置面板：
+- **外观**：切换编辑器主题和字体
+- **生成设置**：配置 Go Struct 的生成选项（包名、表名生成等）
 
 ### DDL 转换示例
 
@@ -138,6 +152,7 @@ flowchart TD
 ## 🛠️ 技术栈
 
 - Vanilla JavaScript
+- [CodeMirror 5](https://codemirror.net/5/) - 代码编辑器
 - [Marked.js](https://marked.js.org/) - Markdown 解析
 - [Mermaid.js](https://mermaid.js.org/) - 图表渲染
 - [html2canvas](https://html2canvas.hertzen.com/) - 图片导出
@@ -151,6 +166,7 @@ devkit-pro/
 ├── app.js                  # 主逻辑
 ├── style.css               # 样式
 ├── lib/                    # 第三方库
+│   ├── codemirror/         # 编辑器核心及模式
 │   ├── marked.min.js
 │   ├── mermaid.min.js
 │   └── html2canvas.min.js
@@ -160,12 +176,17 @@ devkit-pro/
 │   ├── postgresql-parser.js
 │   ├── sqlite-parser.js
 │   ├── json-parser.js
+│   ├── protobuf-parser.js
 │   └── markdown-renderer.js
 ├── generators/
 │   ├── struct-generator.js
+│   ├── protobuf-generator.js
 │   └── diff-engine.js
 ├── utils/
+│   ├── editor-manager.js   # 编辑器管理
+│   ├── history-manager.js  # 本地历史管理
 │   ├── type-mapper.js
+│   ├── protobuf-type-mapper.js
 │   ├── formatter.js
 │   ├── exporter.js
 │   ├── chart-exporter.js
