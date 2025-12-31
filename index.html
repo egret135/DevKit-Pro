@@ -9,8 +9,47 @@
     <link rel="preconnect" href="https://fonts.googleapis.com">
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
     <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&display=swap"
+        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fira+Code:wght@400;500&family=Source+Code+Pro:wght@400;500&display=swap"
         rel="stylesheet">
+    <!-- CodeMirror & Theme -->
+    <link rel="stylesheet" href="lib/codemirror/lib/codemirror.css">
+    <link rel="stylesheet" href="lib/codemirror/theme/dracula.css">
+    <link rel="stylesheet" href="lib/codemirror/theme/material.css">
+    <link rel="stylesheet" href="lib/codemirror/theme/monokai.css">
+    <link rel="stylesheet" href="lib/codemirror/theme/eclipse.css">
+    <link rel="stylesheet" href="lib/codemirror/theme/neo.css">
+    <!-- Custom Editor Styles -->
+    <style>
+        .CodeMirror {
+            height: 100%;
+            font-family: 'JetBrains Mono', monospace;
+            font-size: 14px;
+            border-radius: 6px;
+        }
+
+        .form-section-title {
+            font-size: 12px;
+            font-weight: 600;
+            color: var(--color-text-secondary);
+            margin-bottom: 12px;
+            margin-top: 8px;
+            text-transform: uppercase;
+            letter-spacing: 0.5px;
+        }
+
+        .form-group.row {
+            display: flex;
+            gap: 16px;
+        }
+
+        .col {
+            flex: 1;
+        }
+
+        .select.full-width {
+            width: 100%;
+        }
+    </style>
 </head>
 
 <body>
@@ -133,8 +172,7 @@
                         </div>
                     </div>
                     <div class="panel-body">
-                        <pre id="outputArea"
-                            class="editor output"><code>// 在左侧输入 DDL 或 JSON，点击"转换"按钮生成 Go struct</code></pre>
+                        <textarea id="outputArea" class="editor output" spellcheck="false" readonly></textarea>
                     </div>
                 </div>
             </div>
@@ -145,9 +183,9 @@
                 <div class="panel vertical-split">
                     <!-- Target (Online) DDL -->
                     <div class="sub-panel">
-                        <div class="panel-header small">
+                        <div class="panel-header">
                             <div class="panel-title">Online / 目标 DDL (旧)</div>
-                            <button id="clearDiffBtn" class="btn-ghost small">清空全部</button>
+                            <button id="clearDiffBtn" class="btn-ghost">清空全部</button>
                         </div>
                         <div class="panel-body">
                             <textarea id="diffTargetInput" class="editor" placeholder="粘贴线上环境的 DDL (基准)..."
@@ -177,8 +215,7 @@
                         </div>
                     </div>
                     <div class="panel-body">
-                        <pre id="diffOutputArea" class="editor output"><code>-- 在左侧分别输入新旧 DDL
--- 将自动生成 ALTER 语句</code></pre>
+                        <textarea id="diffOutputArea" class="editor output" spellcheck="false" readonly></textarea>
                     </div>
                 </div>
             </div>
@@ -268,6 +305,29 @@
                     </button>
                 </div>
                 <div class="modal-body">
+                    <div class="form-section-title">外观</div>
+                    <div class="form-group row">
+                        <div class="col">
+                            <label>主题</label>
+                            <select id="editorTheme" class="select full-width">
+                                <option value="dracula">Dracula (Dark)</option>
+                                <option value="material">Material (Dark)</option>
+                                <option value="monokai">Monokai (Dark)</option>
+                                <option value="eclipse">Eclipse (Light)</option>
+                                <option value="neo">Neo (Light)</option>
+                            </select>
+                        </div>
+                        <div class="col">
+                            <label>字体</label>
+                            <select id="editorFont" class="select full-width">
+                                <option value="'JetBrains Mono', monospace">JetBrains Mono</option>
+                                <option value="'Fira Code', monospace">Fira Code</option>
+                                <option value="'Source Code Pro', monospace">Source Code Pro</option>
+                            </select>
+                        </div>
+                    </div>
+
+                    <div class="form-section-title">生成设置</div>
                     <div class="form-group">
                         <label>结构体名称</label>
                         <input type="text" id="structNameInput" class="input" placeholder="留空自动生成" />
@@ -295,7 +355,16 @@
     <script src="lib/mermaid.min.js"></script>
     <script src="lib/html2canvas.min.js"></script>
 
+    <!-- CodeMirror Libraries -->
+    <script src="lib/codemirror/lib/codemirror.js"></script>
+    <script src="lib/codemirror/mode/sql/sql.js"></script>
+    <script src="lib/codemirror/mode/go/go.js"></script>
+    <script src="lib/codemirror/mode/javascript/javascript.js"></script>
+    <script src="lib/codemirror/mode/markdown/markdown.js"></script>
+
     <!-- Scripts -->
+    <script src="utils/history-manager.js"></script>
+    <script src="utils/editor-manager.js"></script>
     <script src="parsers/detector.js"></script>
     <script src="parsers/mysql-parser.js"></script>
     <script src="parsers/postgresql-parser.js"></script>

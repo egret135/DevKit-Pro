@@ -7,7 +7,9 @@ const Settings = {
         structName: '',
         packageName: 'model',
         generateTableName: true,
-        theme: 'dark'
+        theme: 'dark',
+        editorTheme: 'dracula',
+        editorFont: "'JetBrains Mono', monospace"
     },
 
     // Load settings from chrome.storage

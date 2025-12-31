@@ -56,6 +56,10 @@
         copyMarkdownHtmlBtn: document.getElementById('copyMarkdownHtmlBtn'),
         exportMarkdownDropdown: document.getElementById('exportMarkdownDropdown'),
         exportMarkdownBtn: document.getElementById('exportMarkdownBtn'),
+
+        // Appearance
+        editorTheme: document.getElementById('editorTheme'),
+        editorFont: document.getElementById('editorFont')
     };
 
     // State
@@ -71,7 +75,87 @@
         currentSettings = await Settings.load();
         updateSettingsUI();
 
-        // Attach event listeners - Converter
+        // Initialize Editors
+        const inputEditor = editorManager.initFromTextArea('inputArea', 'sql', {
+            placeholder: "粘贴你的 DDL 或 JSON...",
+            theme: currentSettings.editorTheme
+        });
+        const outputEditor = editorManager.initFromTextArea('outputArea', 'go', {
+            readOnly: true,
+            theme: currentSettings.editorTheme
+        });
+
+        const diffTargetEditor = editorManager.initFromTextArea('diffTargetInput', 'sql', {
+            placeholder: "粘贴线上环境的 DDL (基准)...",
+            theme: currentSettings.editorTheme
+        });
+        const diffSourceEditor = editorManager.initFromTextArea('diffSourceInput', 'sql', {
+            placeholder: "粘贴新开发的 DDL (变更后)...",
+            theme: currentSettings.editorTheme
+        });
+        const diffOutputEditor = editorManager.initFromTextArea('diffOutputArea', 'sql', {
+            readOnly: true,
+            theme: currentSettings.editorTheme
+        });
+
+        const markdownEditor = editorManager.initFromTextArea('markdownInput', 'markdown', {
+            placeholder: "输入 Markdown 文本...",
+            theme: currentSettings.editorTheme
+        });
+
+        // Initial Font
+        if (currentSettings.editorFont) {
+            editorManager.setFont(currentSettings.editorFont);
+        }
+
+        // Load History
+        const savedInput = historyManager.load('inputArea', '');
+        if (savedInput) {
+            editorManager.setValue('inputArea', savedInput);
+            handleInputChange(); // Trigger detection
+        }
+
+        const savedDiffTarget = historyManager.load('diffTargetInput', '');
+        if (savedDiffTarget) editorManager.setValue('diffTargetInput', savedDiffTarget);
+
+        const savedDiffSource = historyManager.load('diffSourceInput', '');
+        if (savedDiffSource) editorManager.setValue('diffSourceInput', savedDiffSource);
+
+        const savedMarkdown = historyManager.load('markdownInput', '');
+        if (savedMarkdown) {
+            editorManager.setValue('markdownInput', savedMarkdown);
+            // Don't render immediately on load to improve startup, or maybe do?
+            // Let's render if content exists
+            handleMarkdownChange();
+        }
+
+        // Attach Editor Listeners
+        inputEditor.on('change', () => {
+            handleInputChange();
+            historyManager.save('inputArea', inputEditor.getValue());
+        });
+
+        // Debounce history save for others
+        const saveDiffTarget = historyManager.debounce((val) => historyManager.save('diffTargetInput', val), 1000);
+        diffTargetEditor.on('change', () => {
+            handleDiffChange();
+            saveDiffTarget(diffTargetEditor.getValue());
+        });
+
+        const saveDiffSource = historyManager.debounce((val) => historyManager.save('diffSourceInput', val), 1000);
+        diffSourceEditor.on('change', () => {
+            handleDiffChange();
+            saveDiffSource(diffSourceEditor.getValue());
+        });
+
+        const saveMarkdown = historyManager.debounce((val) => historyManager.save('markdownInput', val), 1000);
+        markdownEditor.on('change', () => {
+            handleMarkdownChange();
+            saveMarkdown(markdownEditor.getValue());
+        });
+
+
+        // Attach DOM event listeners
         elements.convertBtn.addEventListener('click', handleConvert);
         elements.copyBtn.addEventListener('click', handleCopy);
         elements.exportBtn.addEventListener('click', handleExport);
@@ -79,7 +163,7 @@
         elements.settingsBtn.addEventListener('click', () => showModal(true));
         elements.closeModal.addEventListener('click', () => showModal(false));
         elements.saveSettings.addEventListener('click', handleSaveSettings);
-        elements.inputArea.addEventListener('input', handleInputChange);
+        // elements.inputArea.addEventListener('input', handleInputChange); // Removed, using editor event
         elements.dbType.addEventListener('change', handleDbTypeChange);
         elements.inlineNestedStructs.addEventListener('change', handleInlineNestedChange);
 
@@ -91,14 +175,14 @@
         // Attach event listeners - Diff
         elements.modeConverter.addEventListener('click', () => switchMode('converter'));
         elements.modeDiff.addEventListener('click', () => switchMode('diff'));
-        elements.diffTargetInput.addEventListener('input', handleDiffChange);
-        elements.diffSourceInput.addEventListener('input', handleDiffChange);
+        // elements.diffTargetInput.addEventListener('input', handleDiffChange); // Removed
+        // elements.diffSourceInput.addEventListener('input', handleDiffChange); // Removed
         elements.copyDiffBtn.addEventListener('click', handleCopyDiff);
         elements.clearDiffBtn.addEventListener('click', handleClearDiff);
 
         // Attach event listeners - Markdown
         elements.modeMarkdown.addEventListener('click', () => switchMode('markdown'));
-        elements.markdownInput.addEventListener('input', handleMarkdownChange);
+        // elements.markdownInput.addEventListener('input', handleMarkdownChange); // Removed
         elements.clearMarkdownBtn.addEventListener('click', handleClearMarkdown);
         elements.copyMarkdownHtmlBtn.addEventListener('click', handleCopyMarkdownHtml);
 
@@ -109,6 +193,14 @@
         elements.exportMarkdownBtn.addEventListener('click', toggleExportDropdown);
         elements.exportMarkdownDropdown.addEventListener('click', handleMarkdownExport);
         document.addEventListener('click', closeExportDropdown);
+
+        // Appearance Settings Listeners (Immediate Preview)
+        elements.editorTheme.addEventListener('change', () => {
+            editorManager.setTheme(elements.editorTheme.value);
+        });
+        elements.editorFont.addEventListener('change', () => {
+            editorManager.setFont(elements.editorFont.value);
+        });
 
         // Keyboard shortcuts
         document.addEventListener('keydown', handleKeyboard);
@@ -165,11 +257,11 @@
 
     // Handle Diff Logic
     function handleDiff() {
-        const targetDDL = elements.diffTargetInput.value;
-        const sourceDDL = elements.diffSourceInput.value;
+        const targetDDL = editorManager.getValue('diffTargetInput');
+        const sourceDDL = editorManager.getValue('diffSourceInput');
 
         if (!targetDDL.trim() && !sourceDDL.trim()) {
-            elements.diffOutputArea.textContent = '-- 在左侧分别输入新旧 DDL\n-- 将自动生成 ALTER 语句';
+            editorManager.setValue('diffOutputArea', '-- 在左侧分别输入新旧 DDL\n-- 将自动生成 ALTER 语句');
             return;
         }
 
@@ -182,10 +274,10 @@
             }
 
             const statements = diffEngine.generateDiff(targetDDL, sourceDDL);
-            elements.diffOutputArea.textContent = statements.join('\n');
+            editorManager.setValue('diffOutputArea', statements.join('\n'));
             setStatus('Diff 生成成功', 'success');
         } catch (e) {
-            elements.diffOutputArea.textContent = `-- 错误: ${e.message}`;
+            editorManager.setValue('diffOutputArea', `-- 错误: ${e.message}`);
             setStatus('Diff 生成失败', 'error');
         }
     }
@@ -195,7 +287,7 @@
     }
 
     function handleCopyDiff() {
-        const text = elements.diffOutputArea.textContent;
+        const text = editorManager.getValue('diffOutputArea');
         if (!text || text.startsWith('--')) {
             setStatus('没有可复制的 SQL', 'error');
             return;
@@ -208,9 +300,11 @@
     }
 
     function handleClearDiff() {
-        elements.diffTargetInput.value = '';
-        elements.diffSourceInput.value = '';
-        elements.diffOutputArea.textContent = '-- 在左侧分别输入新旧 DDL\n-- 将自动生成 ALTER 语句';
+        editorManager.setValue('diffTargetInput', '');
+        editorManager.setValue('diffSourceInput', '');
+        editorManager.setValue('diffOutputArea', '-- 在左侧分别输入新旧 DDL\n-- 将自动生成 ALTER 语句');
+        historyManager.save('diffTargetInput', '');
+        historyManager.save('diffSourceInput', '');
         setStatus('Diff 已清空', 'ready');
     }
 
@@ -224,7 +318,7 @@
     }
 
     async function handleMarkdownRender() {
-        const input = elements.markdownInput.value;
+        const input = editorManager.getValue('markdownInput');
 
         if (!input.trim()) {
             elements.markdownPreview.innerHTML = '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
@@ -250,7 +344,8 @@
     }
 
     function handleClearMarkdown() {
-        elements.markdownInput.value = '';
+        editorManager.setValue('markdownInput', '');
+        historyManager.save('markdownInput', '');
         elements.markdownPreview.innerHTML = '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
         lastRenderedHtml = '';
         setStatus('Markdown 已清除', 'ready');
@@ -366,7 +461,7 @@
 
     // Handle input change (auto-detect type and auto-convert)
     function handleInputChange() {
-        const input = elements.inputArea.value;
+        const input = editorManager.getValue('inputArea');
         updateLineCount(input);
 
         if (input.trim().length === 0) {
@@ -410,9 +505,11 @@
         if (isProtoFormat) {
             elements.goStructOptions.classList.add('hidden');
             elements.protoNestedMode.classList.remove('hidden');
+            editorManager.setMode('outputArea', 'proto');
         } else {
             elements.goStructOptions.classList.remove('hidden');
             elements.protoNestedMode.classList.add('hidden');
+            editorManager.setMode('outputArea', 'go');
         }
 
         // Re-convert if data exists
@@ -449,7 +546,7 @@
 
     // Handle convert button click
     async function handleConvert() {
-        const input = elements.inputArea.value.trim();
+        const input = editorManager.getValue('inputArea').trim();
 
         if (!input) {
             setStatus('请输入 DDL 或 JSON', 'error');
@@ -537,13 +634,13 @@
             lastGeneratedCode = generatedCode;
 
             // Display output
-            elements.outputArea.textContent = generatedCode;
+            editorManager.setValue('outputArea', generatedCode);
 
             setStatus('转换成功！', 'success');
 
         } catch (error) {
             setStatus(`转换失败: ${error.message}`, 'error');
-            elements.outputArea.textContent = `// 错误: ${error.message}`;
+            editorManager.setValue('outputArea', `// 错误: ${error.message}`);
         }
     }
 
@@ -632,8 +729,9 @@
 
     // Handle clear button click
     function handleClear() {
-        elements.inputArea.value = '';
-        elements.outputArea.textContent = '// 在左侧输入 DDL 或 JSON，点击"转换"按钮生成 Go struct';
+        editorManager.setValue('inputArea', '');
+        historyManager.save('inputArea', '');
+        editorManager.setValue('outputArea', '// 在左侧输入 DDL 或 JSON，点击"转换"按钮生成 Go struct');
         lastParsedData = null;
         lastGeneratedCode = '';
         elements.inputType.textContent = '未检测';
@@ -647,9 +745,18 @@
         currentSettings.structName = elements.structNameInput.value;
         currentSettings.packageName = elements.packageNameInput.value;
         currentSettings.generateTableName = elements.generateTableName.checked;
+
+        // Appearance
+        currentSettings.editorTheme = elements.editorTheme.value;
+        currentSettings.editorFont = elements.editorFont.value;
+
         // inlineNestedStructs is handled separately in the header
 
         await Settings.save(currentSettings);
+
+        // Apply settings
+        editorManager.setTheme(currentSettings.editorTheme);
+        editorManager.setFont(currentSettings.editorFont);
 
         setStatus('设置已保存', 'success');
         showModal(false);
@@ -662,8 +769,11 @@
         elements.generateTableName.checked = currentSettings.generateTableName !== false;
         // Set inline nested struct checkbox in header
         elements.inlineNestedStructs.checked = currentSettings.inlineNestedStructs !== false;
-    }
 
+        // Appearance
+        elements.editorTheme.value = currentSettings.editorTheme || 'dracula';
+        elements.editorFont.value = currentSettings.editorFont || "'JetBrains Mono', monospace";
+    }
     // Show/hide modal
     function showModal(show) {
         if (show) {
