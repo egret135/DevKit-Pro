@@ -22,6 +22,7 @@ const ToolboxController = (function () {
         initJwt();
         initHash();
         initUuid();
+        initPassword();
     }
 
     function switchTool(tool) {
@@ -583,6 +584,130 @@ const ToolboxController = (function () {
             id += alphabet[Math.floor(Math.random() * alphabet.length)];
         }
         return id;
+    }
+
+    // ==================== Password Generator ====================
+    function initPassword() {
+        let generatedPasswords = []; // 存储生成的密码
+
+        // 安全的随机密码生成
+        function generatePassword(length, options) {
+            const charSets = {
+                uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+                lowercase: 'abcdefghijklmnopqrstuvwxyz',
+                numbers: '0123456789',
+                symbols: '!@#$%^&*()_+-=[]{}|;:,.<>?'
+            };
+
+            let chars = '';
+            if (options.uppercase) chars += charSets.uppercase;
+            if (options.lowercase) chars += charSets.lowercase;
+            if (options.numbers) chars += charSets.numbers;
+            if (options.symbols) chars += charSets.symbols;
+
+            if (chars.length === 0) {
+                chars = charSets.lowercase; // 默认使用小写字母
+            }
+
+            // 使用 crypto.getRandomValues 生成安全随机数
+            const array = new Uint32Array(length);
+            crypto.getRandomValues(array);
+
+            let password = '';
+            for (let i = 0; i < length; i++) {
+                password += chars[array[i] % chars.length];
+            }
+            return password;
+        }
+
+        // 复制单个密码
+        function copyPassword(password, rowElement) {
+            navigator.clipboard.writeText(password).then(() => {
+                const originalText = rowElement.querySelector('.password-text').textContent;
+                rowElement.querySelector('.password-text').textContent = '✅ 已复制!';
+                rowElement.querySelector('.password-text').style.color = '#10b981';
+                setTimeout(() => {
+                    rowElement.querySelector('.password-text').textContent = originalText;
+                    rowElement.querySelector('.password-text').style.color = '';
+                }, 1000);
+            });
+        }
+
+        // 渲染密码列表
+        function renderPasswordList(passwords) {
+            const listContainer = document.getElementById('pwdOutputList');
+            if (!listContainer) return;
+
+            generatedPasswords = passwords;
+            listContainer.innerHTML = '';
+
+            // HTML转义函数，防止特殊字符被解析为HTML
+            function escapeHtml(text) {
+                const div = document.createElement('div');
+                div.textContent = text;
+                return div.innerHTML;
+            }
+
+            passwords.forEach((pwd, index) => {
+                const row = document.createElement('div');
+                row.className = 'password-row';
+                row.innerHTML = `
+                    <span class="password-index">${index + 1}.</span>
+                    <span class="password-text">${escapeHtml(pwd)}</span>
+                    <button class="password-copy-btn" title="复制此密码">📋</button>
+                `;
+
+                // 点击密码文本复制
+                row.querySelector('.password-text').addEventListener('click', () => {
+                    copyPassword(pwd, row);
+                });
+
+                // 点击复制按钮
+                row.querySelector('.password-copy-btn').addEventListener('click', () => {
+                    copyPassword(pwd, row);
+                });
+
+                listContainer.appendChild(row);
+            });
+        }
+
+        // 生成密码按钮
+        document.getElementById('pwdGenerateBtn')?.addEventListener('click', () => {
+            const length = parseInt(document.getElementById('pwdLength')?.value) || 16;
+            const count = parseInt(document.getElementById('pwdCount')?.value) || 5;
+
+            const options = {
+                uppercase: document.getElementById('pwdUppercase')?.checked,
+                lowercase: document.getElementById('pwdLowercase')?.checked,
+                numbers: document.getElementById('pwdNumbers')?.checked,
+                symbols: document.getElementById('pwdSymbols')?.checked
+            };
+
+            const passwords = [];
+            for (let i = 0; i < count; i++) {
+                passwords.push(generatePassword(length, options));
+            }
+            renderPasswordList(passwords);
+        });
+
+        // 复制全部按钮
+        document.getElementById('pwdCopyAllBtn')?.addEventListener('click', () => {
+            if (generatedPasswords.length === 0) return;
+
+            const allPasswords = generatedPasswords.join('\n');
+            navigator.clipboard.writeText(allPasswords).then(() => {
+                const btn = document.getElementById('pwdCopyAllBtn');
+                const originalText = btn.textContent;
+                btn.textContent = '✅ 已复制全部!';
+                btn.style.background = '#10b981';
+                btn.style.color = '#fff';
+                setTimeout(() => {
+                    btn.textContent = originalText;
+                    btn.style.background = '';
+                    btn.style.color = '';
+                }, 1000);
+            });
+        });
     }
 
     // Public API

@@ -323,6 +323,10 @@
                         <span class="tool-icon">🆔</span>
                         <span>ID生成</span>
                     </button>
+                    <button class="toolbox-tab" data-tool="password">
+                        <span class="tool-icon">🔑</span>
+                        <span>密码生成</span>
+                    </button>
                 </div>
 
                 <!-- Tool Panel (Bottom) -->
@@ -478,6 +482,41 @@
                             <div id="uuidLineNumbers" class="uuid-line-numbers"></div>
                             <textarea id="uuidOutput" class="tool-textarea" readonly
                                 placeholder="生成的ID将显示在这里"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Password Generator Panel -->
+                    <div id="toolPanelPassword" class="tool-panel tech-panel">
+                        <div class="tool-row password-options">
+                            <label class="password-option">
+                                <input type="checkbox" id="pwdUppercase" checked>
+                                <span>大写字母</span>
+                            </label>
+                            <label class="password-option">
+                                <input type="checkbox" id="pwdLowercase" checked>
+                                <span>小写字母</span>
+                            </label>
+                            <label class="password-option">
+                                <input type="checkbox" id="pwdNumbers" checked>
+                                <span>数字</span>
+                            </label>
+                            <label class="password-option">
+                                <input type="checkbox" id="pwdSymbols">
+                                <span>特殊符号</span>
+                            </label>
+                        </div>
+                        <div class="tool-row">
+                            <label class="password-label">长度:</label>
+                            <input type="number" id="pwdLength" class="tool-input small" value="16" min="8" max="128">
+                            <label class="password-label">数量:</label>
+                            <input type="number" id="pwdCount" class="tool-input small" value="5" min="1" max="100">
+                            <button id="pwdGenerateBtn" class="tool-btn-action tech-btn primary">生成密码</button>
+                            <button id="pwdCopyAllBtn" class="tool-btn-action tech-btn">复制全部</button>
+                        </div>
+                        <div class="tool-row">
+                            <div id="pwdOutputList" class="password-list">
+                                <div class="password-placeholder">生成的密码将显示在这里</div>
+                            </div>
                         </div>
                     </div>
                 </div>

@@ -1687,6 +1687,141 @@ body {
     outline: none;
 }
 
+/* Password Generator Panel Styles */
+#toolPanelPassword {
+    height: auto !important;
+    min-height: auto !important;
+    flex: 0 0 auto !important;
+    align-self: flex-start !important;
+}
+
+/* 当密码生成面板激活时，让容器高度自适应 */
+.toolbox-content:has(#toolPanelPassword.active) {
+    align-items: flex-start;
+}
+
+/* 密码选项行 */
+#toolPanelPassword .password-options {
+    display: flex;
+    gap: 20px;
+    flex-wrap: wrap;
+}
+
+/* 密码选项标签 */
+#toolPanelPassword .password-option {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    cursor: pointer;
+    padding: 8px 12px;
+    background: #f1f5f9;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+#toolPanelPassword .password-option:hover {
+    background: #e2e8f0;
+}
+
+#toolPanelPassword .password-option input[type="checkbox"] {
+    width: 18px;
+    height: 18px;
+    cursor: pointer;
+}
+
+/* 密码标签 */
+#toolPanelPassword .password-label {
+    font-size: 14px;
+    color: #475569;
+    margin-right: 8px;
+}
+
+/* 密码列表容器 */
+#toolPanelPassword .password-list {
+    width: 100%;
+    min-height: 600px;
+    max-height: 1000px;
+    overflow-y: auto;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+}
+
+/* 密码占位符 */
+#toolPanelPassword .password-placeholder {
+    color: #94a3b8;
+    font-size: 14px;
+    text-align: center;
+    padding: 40px 0;
+}
+
+/* 密码行 */
+#toolPanelPassword .password-row {
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    transition: all 0.2s ease;
+}
+
+#toolPanelPassword .password-row:hover {
+    border-color: #3b82f6;
+    box-shadow: 0 2px 8px rgba(59, 130, 246, 0.15);
+}
+
+#toolPanelPassword .password-row:last-child {
+    margin-bottom: 0;
+}
+
+/* 密码索引 */
+#toolPanelPassword .password-index {
+    min-width: 40px;
+    flex-shrink: 0;
+    font-size: 14px;
+    color: #64748b;
+    font-weight: 500;
+    text-align: right;
+}
+
+/* 密码文本 */
+#toolPanelPassword .password-text {
+    flex: 1;
+    min-width: 0;
+    font-family: 'JetBrains Mono', 'Menlo', 'Consolas', monospace;
+    font-size: 15px;
+    color: #1e293b;
+    cursor: pointer;
+    word-break: break-all;
+    overflow-wrap: anywhere;
+    transition: color 0.2s ease;
+}
+
+#toolPanelPassword .password-text:hover {
+    color: #3b82f6;
+}
+
+/* 复制按钮 */
+#toolPanelPassword .password-copy-btn {
+    flex-shrink: 0;
+    padding: 6px 10px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+    border-radius: 4px;
+    cursor: pointer;
+    font-size: 14px;
+    transition: all 0.2s ease;
+}
+
+#toolPanelPassword .password-copy-btn:hover {
+    background: #e2e8f0;
+    border-color: #cbd5e1;
+}
+
 .tech-panel .tool-textarea.small {
     min-height: 40px;
     height: 40px;
