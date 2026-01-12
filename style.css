@@ -1960,3 +1960,327 @@ body {
 .tool-textarea[readonly] {
     background: var(--color-bg);
 }
+
+/* ==================== GitHub Alert Styles ==================== */
+.markdown-preview .alert {
+    margin: 1rem 0;
+    padding: 1rem 1rem 1rem 3rem;
+    border-radius: 6px;
+    border-left: 4px solid;
+    position: relative;
+}
+
+.markdown-preview .alert::before {
+    position: absolute;
+    left: 0.75rem;
+    top: 1rem;
+    font-size: 1.1rem;
+}
+
+.markdown-preview .alert-title {
+    display: block;
+    font-weight: 600;
+    font-size: 0.9rem;
+    margin-bottom: 0.5rem;
+    text-transform: uppercase;
+    letter-spacing: 0.02em;
+}
+
+.markdown-preview .alert p {
+    margin: 0.3rem 0;
+}
+
+.markdown-preview .alert p:last-child {
+    margin-bottom: 0;
+}
+
+/* NOTE - 蓝色 */
+.markdown-preview .alert-note {
+    background: #dbeafe;
+    border-color: #3b82f6;
+}
+
+.markdown-preview .alert-note::before {
+    content: 'ℹ️';
+}
+
+.markdown-preview .alert-note .alert-title {
+    color: #1d4ed8;
+}
+
+/* TIP - 绿色 */
+.markdown-preview .alert-tip {
+    background: #dcfce7;
+    border-color: #22c55e;
+}
+
+.markdown-preview .alert-tip::before {
+    content: '💡';
+}
+
+.markdown-preview .alert-tip .alert-title {
+    color: #15803d;
+}
+
+/* IMPORTANT - 紫色 */
+.markdown-preview .alert-important {
+    background: #f3e8ff;
+    border-color: #a855f7;
+}
+
+.markdown-preview .alert-important::before {
+    content: '❗';
+}
+
+.markdown-preview .alert-important .alert-title {
+    color: #7e22ce;
+}
+
+/* WARNING - 黄色/橙色 */
+.markdown-preview .alert-warning {
+    background: #fef3c7;
+    border-color: #f59e0b;
+}
+
+.markdown-preview .alert-warning::before {
+    content: '⚠️';
+}
+
+.markdown-preview .alert-warning .alert-title {
+    color: #b45309;
+}
+
+/* CAUTION - 红色 */
+.markdown-preview .alert-caution {
+    background: #fee2e2;
+    border-color: #ef4444;
+}
+
+.markdown-preview .alert-caution::before {
+    content: '🔴';
+}
+
+.markdown-preview .alert-caution .alert-title {
+    color: #dc2626;
+}
+
+/* ==================== Image Lightbox ==================== */
+.lightbox-overlay {
+    position: fixed;
+    inset: 0;
+    background: rgba(0, 0, 0, 0.92);
+    z-index: 10000;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    opacity: 0;
+    visibility: hidden;
+    transition: all 0.3s ease;
+    cursor: zoom-out;
+}
+
+.lightbox-overlay.visible {
+    opacity: 1;
+    visibility: visible;
+}
+
+.lightbox-content {
+    max-width: 95vw;
+    max-height: 95vh;
+    background: white;
+    border-radius: 8px;
+    padding: 24px;
+    overflow: auto;
+    cursor: default;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+    animation: lightbox-zoom-in 0.3s ease;
+}
+
+@keyframes lightbox-zoom-in {
+    from {
+        transform: scale(0.9);
+        opacity: 0;
+    }
+
+    to {
+        transform: scale(1);
+        opacity: 1;
+    }
+}
+
+.lightbox-content svg {
+    display: block;
+    max-width: 100%;
+    height: auto;
+}
+
+.lightbox-close {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    width: 44px;
+    height: 44px;
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    border-radius: 50%;
+    color: white;
+    font-size: 24px;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+    z-index: 10001;
+}
+
+.lightbox-close:hover {
+    background: rgba(255, 255, 255, 0.25);
+    transform: scale(1.1);
+}
+
+.lightbox-close svg {
+    width: 20px;
+    height: 20px;
+}
+
+.lightbox-hint {
+    position: fixed;
+    bottom: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    color: rgba(255, 255, 255, 0.6);
+    font-size: 13px;
+    font-family: var(--font-sans);
+}
+
+/* Mermaid Toolbar Update */
+.mermaid-toolbar {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    display: flex;
+    gap: 6px;
+    opacity: 0;
+    transition: opacity 0.2s ease;
+    z-index: 10;
+}
+
+.mermaid-container:hover .mermaid-toolbar {
+    opacity: 1;
+}
+
+.mermaid-zoom-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: white;
+    background: #6366f1;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.mermaid-zoom-btn:hover {
+    background: #4f46e5;
+    transform: translateY(-1px);
+}
+
+.mermaid-zoom-btn:active {
+    transform: translateY(0);
+}
+
+/* Lightbox Zoom Controls */
+.lightbox-zoom-controls {
+    position: fixed;
+    top: 20px;
+    left: 50%;
+    transform: translateX(-50%);
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    background: rgba(0, 0, 0, 0.6);
+    backdrop-filter: blur(8px);
+    border-radius: 8px;
+    z-index: 10001;
+}
+
+.lightbox-zoom-btn {
+    width: 36px;
+    height: 36px;
+    background: rgba(255, 255, 255, 0.15);
+    border: none;
+    border-radius: 6px;
+    color: white;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    transition: all 0.2s ease;
+}
+
+.lightbox-zoom-btn:hover {
+    background: rgba(255, 255, 255, 0.3);
+    transform: scale(1.05);
+}
+
+.lightbox-zoom-btn:active {
+    transform: scale(0.95);
+}
+
+.lightbox-zoom-btn svg {
+    width: 18px;
+    height: 18px;
+}
+
+.lightbox-zoom-level {
+    color: white;
+    font-size: 13px;
+    font-weight: 500;
+    min-width: 50px;
+    text-align: center;
+    padding: 0 8px;
+}
+
+/* Lightbox Image Wrapper */
+.lightbox-image-wrapper {
+    display: inline-block;
+    cursor: grab;
+    transform-origin: center center;
+    transition: none;
+    background: white;
+    border-radius: 8px;
+    padding: 24px;
+    box-shadow: 0 25px 50px -12px rgba(0, 0, 0, 0.5);
+}
+
+/* Update lightbox content for zoom support */
+.lightbox-content {
+    max-width: 95vw;
+    max-height: 95vh;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    background: transparent;
+    border-radius: 0;
+    padding: 0;
+    overflow: visible;
+    cursor: default;
+    box-shadow: none;
+    animation: none;
+}
+
+.lightbox-image-wrapper:active {
+    cursor: grabbing;
+}
+
+.lightbox-image-wrapper svg,
+.lightbox-image-wrapper img {
+    display: block;
+    max-width: none;
+    max-height: none;
+}

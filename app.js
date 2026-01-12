@@ -437,7 +437,13 @@
         const format = item.dataset.format;
         elements.exportMarkdownDropdown.classList.remove('open');
 
-        if (!lastRenderedHtml) {
+        // Check if preview has actual content (not just placeholder)
+        const previewContent = elements.markdownPreview.innerHTML;
+        const hasContent = previewContent &&
+            !previewContent.includes('class="placeholder"') &&
+            elements.markdownPreview.childNodes.length > 0;
+
+        if (!hasContent) {
             setStatus('没有可导出的内容', 'error');
             return;
         }
@@ -463,8 +469,19 @@
             setStatus(`导出失败: ${error.message}`, 'error');
         }
     }
-    // Handle chart export button clicks (event delegation)
+    // Handle chart export and zoom button clicks (event delegation)
     async function handleChartExport(event) {
+        // Handle zoom button click
+        const zoomBtn = event.target.closest('.mermaid-zoom-btn');
+        if (zoomBtn) {
+            const container = zoomBtn.closest('.mermaid-container');
+            if (container && typeof ImageLightbox !== 'undefined') {
+                ImageLightbox.openMermaid(container);
+            }
+            return;
+        }
+
+        // Handle export button click
         const btn = event.target.closest('.mermaid-export-btn');
         if (!btn) return;
 

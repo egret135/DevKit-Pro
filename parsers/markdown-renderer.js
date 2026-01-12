@@ -1,8 +1,17 @@
-// Markdown Renderer with Mermaid Support
-// Handles Markdown parsing and Mermaid diagram rendering
+// Markdown Renderer with Mermaid Support and GitHub Alert Syntax
+// Handles Markdown parsing, Mermaid diagram rendering, and GitHub-style alerts
 
 const MarkdownRenderer = {
     initialized: false,
+
+    // GitHub Alert type definitions
+    ALERT_TYPES: {
+        NOTE: { icon: 'ℹ️', class: 'alert-note', label: 'Note' },
+        TIP: { icon: '💡', class: 'alert-tip', label: 'Tip' },
+        IMPORTANT: { icon: '❗', class: 'alert-important', label: 'Important' },
+        WARNING: { icon: '⚠️', class: 'alert-warning', label: 'Warning' },
+        CAUTION: { icon: '🔴', class: 'alert-caution', label: 'Caution' }
+    },
 
     /**
      * Initialize the renderer with marked and mermaid configurations
@@ -38,6 +47,77 @@ const MarkdownRenderer = {
     },
 
     /**
+     * Preprocess GitHub Alert syntax
+     * Converts `> [!TYPE]` blocks to special placeholders
+     * @param {string} text - The markdown text
+     * @returns {string} - Preprocessed text with alert placeholders
+     */
+    preprocessAlerts(text) {
+        const alertRegex = /^>\s*\[!(NOTE|TIP|IMPORTANT|WARNING|CAUTION)\]\s*\n((?:>.*(?:\n|$))*)/gim;
+
+        let result = text;
+        let match;
+        let counter = 0;
+        const alertBlocks = [];
+
+        // Reset regex lastIndex
+        alertRegex.lastIndex = 0;
+
+        while ((match = alertRegex.exec(text)) !== null) {
+            const type = match[1].toUpperCase();
+            const content = match[2]
+                .split('\n')
+                .map(line => line.replace(/^>\s?/, ''))
+                .join('\n')
+                .trim();
+
+            const placeholder = `<!--ALERT_PLACEHOLDER_${counter}-->`;
+            alertBlocks.push({ type, content, placeholder });
+
+            result = result.replace(match[0], placeholder + '\n');
+            counter++;
+        }
+
+        return { text: result, alertBlocks };
+    },
+
+    /**
+     * Convert alert placeholders to HTML
+     * @param {string} html - The rendered HTML
+     * @param {Array} alertBlocks - Array of alert block data
+     * @returns {string} - HTML with alert blocks rendered
+     */
+    postprocessAlerts(html, alertBlocks) {
+        let result = html;
+
+        for (const block of alertBlocks) {
+            const alertInfo = this.ALERT_TYPES[block.type];
+            if (!alertInfo) continue;
+
+            // Render the content as markdown then extract inner HTML
+            let contentHtml = block.content;
+            if (typeof marked !== 'undefined') {
+                contentHtml = marked.parse(block.content);
+            }
+
+            const alertHtml = `
+                <div class="alert ${alertInfo.class}">
+                    <span class="alert-title">${alertInfo.label}</span>
+                    ${contentHtml}
+                </div>
+            `;
+
+            // Replace placeholder (may be wrapped in <p> tags)
+            result = result.replace(
+                new RegExp(`<p>\\s*${block.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}\\s*</p>|${block.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&')}`, 'g'),
+                alertHtml
+            );
+        }
+
+        return result;
+    },
+
+    /**
      * Render markdown text to HTML with Mermaid support
      * @param {string} markdownText - The markdown text to render
      * @returns {Promise<string>} - The rendered HTML
@@ -49,12 +129,15 @@ const MarkdownRenderer = {
 
         this.init();
 
-        // Extract mermaid code blocks and replace with unique placeholders
+        // Step 1: Preprocess GitHub Alert syntax
+        const { text: alertProcessedText, alertBlocks } = this.preprocessAlerts(markdownText);
+
+        // Step 2: Extract mermaid code blocks and replace with unique placeholders
         const mermaidBlocks = [];
         const placeholderPrefix = 'MERMAID_BLOCK_';
         const placeholderSuffix = '_END';
 
-        let processedText = markdownText.replace(
+        let processedText = alertProcessedText.replace(
             /```mermaid\s*([\s\S]*?)```/gi,
             (match, code) => {
                 const index = mermaidBlocks.length;
@@ -64,7 +147,7 @@ const MarkdownRenderer = {
             }
         );
 
-        // Render markdown to HTML
+        // Step 3: Render markdown to HTML
         let html = '';
         if (typeof marked !== 'undefined') {
             html = marked.parse(processedText);
@@ -73,16 +156,27 @@ const MarkdownRenderer = {
             html = this.basicRender(processedText);
         }
 
-        // Render mermaid diagrams and replace placeholders
+        // Step 4: Postprocess GitHub Alert blocks
+        html = this.postprocessAlerts(html, alertBlocks);
+
+        // Step 5: Render mermaid diagrams and replace placeholders
         for (let i = 0; i < mermaidBlocks.length; i++) {
             const mermaidCode = mermaidBlocks[i];
             const placeholderText = `${placeholderPrefix}${i}${placeholderSuffix}`;
 
             try {
                 const svg = await this.renderMermaid(mermaidCode, i);
-                // Build mermaid container with export buttons
+                // Build mermaid container with toolbar (zoom + export buttons)
                 const containerHtml = `<div class="mermaid-container" data-chart-index="${i}">
-                    <div class="mermaid-export-buttons">
+                    <div class="mermaid-toolbar">
+                        <button class="mermaid-zoom-btn" data-index="${i}" title="放大查看">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                <circle cx="11" cy="11" r="8"></circle>
+                                <path d="M21 21l-4.35-4.35"></path>
+                                <path d="M11 8v6M8 11h6"></path>
+                            </svg>
+                            放大
+                        </button>
                         <button class="mermaid-export-btn svg-btn" data-format="svg" data-index="${i}" title="导出 SVG">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>

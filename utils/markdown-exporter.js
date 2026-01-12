@@ -59,6 +59,19 @@ const MarkdownExporter = {
     },
 
     /**
+     * Maximum canvas dimension to avoid browser limits
+     * Most browsers limit canvas to around 16384px or 32767px
+     * We use a conservative limit considering scale factor of 2
+     */
+    MAX_CANVAS_DIMENSION: 8000,  // 8000 * 2 (scale) = 16000, within limits
+
+    /**
+     * Padding values for export (used in prepareForExport and chunked exports)
+     */
+    EXPORT_PADDING_X: 40,
+    EXPORT_PADDING_Y: 30,
+
+    /**
      * Create a clone of the element for export with fixed dimensions
      * @param {HTMLElement} previewElement - The markdown preview element
      * @returns {Promise<{wrapper: HTMLElement, width: number, height: number}>}
@@ -80,13 +93,17 @@ const MarkdownExporter = {
         });
 
         // Add padding for visual comfort (matches the container padding)
-        const paddingX = 40;
-        const paddingY = 30;
+        const paddingX = this.EXPORT_PADDING_X;
+        const paddingY = this.EXPORT_PADDING_Y;
 
         // Calculate final dimensions
         // Use the larger of: measured content bounds or scrollWidth/Height
-        const contentWidth = Math.max(maxRight, previewElement.scrollWidth) + paddingX * 2;
-        const contentHeight = Math.max(maxBottom, previewElement.scrollHeight) + paddingY * 2;
+        let contentWidth = Math.max(maxRight, previewElement.scrollWidth) + paddingX * 2;
+        let contentHeight = Math.max(maxBottom, previewElement.scrollHeight) + paddingY * 2;
+
+        // Store original dimensions for chunking calculation
+        const originalWidth = contentWidth;
+        const originalHeight = contentHeight;
 
         // Create a wrapper div that will contain the clone
         const wrapper = document.createElement('div');
@@ -128,11 +145,136 @@ const MarkdownExporter = {
         wrapper.style.width = `${finalWidth}px`;
         wrapper.style.height = `${finalHeight}px`;
 
-        return { wrapper, width: finalWidth, height: finalHeight };
+        // Handle SVG conversion to ensure visibility in html2canvas
+        await this.convertSvgsToImages(wrapper);
+
+        return {
+            wrapper: wrapper,
+            width: finalWidth,
+            height: finalHeight
+        };
+    },
+
+    /**
+     * Converts inline SVGs to PNG Images
+     * This fixes html2canvas issues with complex SVGs (like Mermaid)
+     * by rendering SVG to Canvas first, then converting to PNG data URI
+     * @param {HTMLElement} container
+     */
+    async convertSvgsToImages(container) {
+        const svgs = container.querySelectorAll('svg');
+        if (svgs.length === 0) return;
+
+        console.log('[SVG转换] 找到', svgs.length, '个SVG');
+
+        const tasks = Array.from(svgs).map(async (svg, index) => {
+            try {
+                // Get dimensions first
+                let width = 0;
+                let height = 0;
+
+                // Try viewBox first
+                const viewBox = svg.getAttribute('viewBox');
+                if (viewBox) {
+                    const parts = viewBox.split(/[\s,]+/);
+                    if (parts.length >= 4) {
+                        width = parseFloat(parts[2]) || 0;
+                        height = parseFloat(parts[3]) || 0;
+                    }
+                }
+
+                // Try width/height attributes
+                if (!width) width = parseFloat(svg.getAttribute('width')) || 0;
+                if (!height) height = parseFloat(svg.getAttribute('height')) || 0;
+
+                // Try scrollWidth/Height
+                if (!width) width = svg.scrollWidth || 0;
+                if (!height) height = svg.scrollHeight || 0;
+
+                // Try computed style
+                if (!width || !height) {
+                    const computed = window.getComputedStyle(svg);
+                    if (!width) width = parseFloat(computed.width) || 0;
+                    if (!height) height = parseFloat(computed.height) || 0;
+                }
+
+                // Last resort
+                if (!width || !height) {
+                    const rect = svg.getBoundingClientRect();
+                    if (!width) width = rect.width || 300;
+                    if (!height) height = rect.height || 150;
+                }
+
+                width = Math.max(width, 50);
+                height = Math.max(height, 50);
+
+                // Serialize SVG to data URI
+                const xml = new XMLSerializer().serializeToString(svg);
+                const svg64 = btoa(unescape(encodeURIComponent(xml)));
+                const svgDataUri = 'data:image/svg+xml;base64,' + svg64;
+
+                // Load SVG into temporary image
+                const tempImg = new Image();
+                tempImg.width = width;
+                tempImg.height = height;
+
+                const loadPromise = new Promise((resolve, reject) => {
+                    tempImg.onload = resolve;
+                    tempImg.onerror = reject;
+                });
+                tempImg.src = svgDataUri;
+
+                try {
+                    await loadPromise;
+                } catch (e) {
+                    console.warn('[SVG转换] SVG', index, '加载失败');
+                    return;
+                }
+
+                // Create canvas and draw SVG
+                const canvas = document.createElement('canvas');
+                const scale = 2; // Higher resolution
+                canvas.width = width * scale;
+                canvas.height = height * scale;
+
+                const ctx = canvas.getContext('2d');
+                ctx.fillStyle = 'transparent';
+                ctx.fillRect(0, 0, canvas.width, canvas.height);
+                ctx.drawImage(tempImg, 0, 0, canvas.width, canvas.height);
+
+                // Convert canvas to PNG data URI
+                const pngDataUri = canvas.toDataURL('image/png', 1.0);
+
+                // Create final PNG image element
+                const pngImg = new Image();
+                pngImg.src = pngDataUri;
+                pngImg.width = width;
+                pngImg.height = height;
+                pngImg.style.width = width + 'px';
+                pngImg.style.height = height + 'px';
+                pngImg.style.display = 'inline-block';
+
+                // Wait for PNG image to load
+                await new Promise((resolve) => {
+                    pngImg.onload = resolve;
+                    pngImg.onerror = resolve;
+                });
+
+                if (svg.parentNode) {
+                    svg.parentNode.replaceChild(pngImg, svg);
+                }
+            } catch (e) {
+                console.error('[SVG转换] 错误:', e);
+            }
+        });
+
+        await Promise.all(tasks);
+        console.log('[SVG转换] 完成，已转换', svgs.length, '个SVG为PNG');
     },
 
     /**
      * Export markdown preview as PNG using html2canvas
+     * Supports chunked export for content exceeding browser canvas limits
      * @param {HTMLElement} previewElement - The markdown preview element
      */
     async exportAsPNG(previewElement) {
@@ -141,45 +283,170 @@ const MarkdownExporter = {
         }
 
         this.showLoading();
+        console.log('[DEBUG exportAsPNG] Starting export...');
 
+        let wrapper = null;
         try {
-            const { wrapper, width, height } = await this.prepareForExport(previewElement);
+            const prepareResult = await this.prepareForExport(previewElement);
+            wrapper = prepareResult.wrapper;
+            const { width, height } = prepareResult;
 
-            const canvas = await html2canvas(wrapper, {
-                width: width,
-                height: height,
-                scale: 2,
-                useCORS: true,
-                allowTaint: true,
-                backgroundColor: '#FFFFFF',
-                logging: false,
-                onclone: (clonedDoc) => {
-                    // Ensure Mermaid SVGs are visible
-                    const svgs = clonedDoc.querySelectorAll('svg');
-                    svgs.forEach(svg => {
-                        svg.style.maxWidth = 'none';
-                        svg.style.overflow = 'visible';
-                    });
-                }
-            });
+            console.log('[DEBUG exportAsPNG] Content dimensions - width:', width, 'height:', height);
 
-            // Cleanup
-            document.body.removeChild(wrapper);
+            // Calculate if we need chunked export
+            const maxDimension = this.MAX_CANVAS_DIMENSION;
+            const needsChunking = height > maxDimension;
 
-            canvas.toBlob((blob) => {
-                if (blob) {
-                    this.downloadBlob(blob, this.generateFilename('png'));
-                    this.hideLoading();
-                } else {
-                    this.hideLoading();
-                    throw new Error('Failed to create PNG');
-                }
-            }, 'image/png', 1.0);
+            if (needsChunking) {
+                console.log('[DEBUG exportAsPNG] Content exceeds limit, using chunked export');
+                await this.exportPNGChunked(wrapper, width, height, maxDimension);
+            } else {
+                await this.exportPNGSingle(wrapper, width, height);
+            }
+
+            // Cleanup wrapper
+            if (wrapper && wrapper.parentNode) {
+                document.body.removeChild(wrapper);
+                wrapper = null;
+            }
+
+            this.hideLoading();
+            console.log('[DEBUG exportAsPNG] Export completed successfully');
 
         } catch (error) {
+            if (wrapper && wrapper.parentNode) {
+                document.body.removeChild(wrapper);
+            }
             this.hideLoading();
+            console.error('PNG export failed:', error);
             throw error;
         }
+    },
+
+    /**
+     * Export a single PNG (when content fits within limits)
+     */
+    async exportPNGSingle(wrapper, width, height) {
+        const canvas = await html2canvas(wrapper, {
+            width: width,
+            height: height,
+            scale: 2,
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: '#FFFFFF',
+            logging: false,
+            onclone: (clonedDoc) => {
+                const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                toolbars.forEach(tb => tb.remove());
+            }
+        });
+
+        const blob = await new Promise((resolve, reject) => {
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    resolve(blob);
+                } else {
+                    reject(new Error('Failed to create PNG blob'));
+                }
+            }, 'image/png', 1.0);
+        });
+
+        this.downloadBlob(blob, this.generateFilename('png'));
+    },
+
+    /**
+     * Export multiple PNG chunks when content is too large
+     */
+    async exportPNGChunked(wrapper, totalWidth, totalHeight, chunkHeight) {
+        const numChunks = Math.ceil(totalHeight / chunkHeight);
+        console.log('[DEBUG exportPNGChunked] Splitting into', numChunks, 'chunks');
+
+        const clone = wrapper.firstElementChild;
+        if (!clone) {
+            throw new Error('No content element found in wrapper');
+        }
+
+        const baseFilename = this.generateFilename('png').replace('.png', '');
+
+        for (let i = 0; i < numChunks; i++) {
+            const yOffset = i * chunkHeight;
+            const currentChunkHeight = Math.min(chunkHeight, totalHeight - yOffset);
+
+            console.log('[DEBUG exportPNGChunked] Processing chunk', i + 1, '/', numChunks);
+
+            // Create a temporary container for this chunk with proper padding
+            const paddingX = this.EXPORT_PADDING_X;
+            const paddingY = this.EXPORT_PADDING_Y;
+
+            const chunkWrapper = document.createElement('div');
+            chunkWrapper.style.cssText = `
+                position: fixed;
+                left: -9999px;
+                top: 0;
+                width: ${totalWidth}px;
+                height: ${currentChunkHeight}px;
+                background: #FFFFFF;
+                overflow: hidden;
+                padding: ${paddingY}px ${paddingX}px;
+                box-sizing: border-box;
+            `;
+
+            const chunkClone = clone.cloneNode(true);
+            chunkClone.style.cssText = `
+                position: absolute;
+                left: ${paddingX}px;
+                top: ${-yOffset + paddingY}px;
+                width: calc(100% - ${paddingX * 2}px);
+            `;
+
+            chunkWrapper.appendChild(chunkClone);
+            document.body.appendChild(chunkWrapper);
+
+            // Re-convert any SVGs in this chunk
+            await this.convertSvgsToImages(chunkWrapper);
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            try {
+                const canvas = await html2canvas(chunkWrapper, {
+                    width: totalWidth,
+                    height: currentChunkHeight,
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: false,
+                    backgroundColor: '#FFFFFF',
+                    logging: false,
+                    onclone: (clonedDoc) => {
+                        const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                        toolbars.forEach(tb => tb.remove());
+                    }
+                });
+
+                const blob = await new Promise((resolve, reject) => {
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            resolve(blob);
+                        } else {
+                            reject(new Error('Failed to create PNG blob for chunk ' + (i + 1)));
+                        }
+                    }, 'image/png', 1.0);
+                });
+
+                const filename = numChunks > 1 ? `${baseFilename}-part${i + 1}.png` : `${baseFilename}.png`;
+                this.downloadBlob(blob, filename);
+
+                if (i < numChunks - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+
+            } finally {
+                if (chunkWrapper.parentNode) {
+                    document.body.removeChild(chunkWrapper);
+                }
+            }
+        }
+
+        console.log('[DEBUG exportPNGChunked] All', numChunks, 'chunks exported');
     },
 
     /**
@@ -193,83 +460,369 @@ const MarkdownExporter = {
 
         this.showLoading();
 
+        let wrapper = null;
         try {
-            const { wrapper, width, height } = await this.prepareForExport(previewElement);
+            const prepareResult = await this.prepareForExport(previewElement);
+            wrapper = prepareResult.wrapper;
+            const { width, height } = prepareResult;
 
-            const canvas = await html2canvas(wrapper, {
-                width: width,
-                height: height,
-                scale: 2,
-                useCORS: true,
-                allowTaint: true,
-                backgroundColor: '#FFFFFF',
-                logging: false
-            });
+            console.log('[DEBUG exportAsJPG] Content dimensions - width:', width, 'height:', height);
 
-            // Cleanup
-            document.body.removeChild(wrapper);
+            // Calculate if we need chunked export
+            const maxDimension = this.MAX_CANVAS_DIMENSION;
+            const needsChunking = height > maxDimension;
 
-            canvas.toBlob((blob) => {
-                if (blob) {
-                    this.downloadBlob(blob, this.generateFilename('jpg'));
-                    this.hideLoading();
-                } else {
-                    this.hideLoading();
-                    throw new Error('Failed to create JPG');
-                }
-            }, 'image/jpeg', 0.92);
+            if (needsChunking) {
+                console.log('[DEBUG exportAsJPG] Content exceeds limit, using chunked export');
+                await this.exportJPGChunked(wrapper, width, height, maxDimension);
+            } else {
+                await this.exportJPGSingle(wrapper, width, height);
+            }
+
+            // Cleanup wrapper
+            if (wrapper && wrapper.parentNode) {
+                document.body.removeChild(wrapper);
+                wrapper = null;
+            }
+
+            this.hideLoading();
+            console.log('[DEBUG exportAsJPG] Export completed successfully');
 
         } catch (error) {
+            if (wrapper && wrapper.parentNode) {
+                document.body.removeChild(wrapper);
+            }
             this.hideLoading();
+            console.error('JPG export failed:', error);
             throw error;
         }
     },
 
     /**
+     * Export a single JPG (when content fits within limits)
+     */
+    async exportJPGSingle(wrapper, width, height) {
+        const canvas = await html2canvas(wrapper, {
+            width: width,
+            height: height,
+            scale: 2,
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: '#FFFFFF',
+            logging: false,
+            onclone: (clonedDoc) => {
+                const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                toolbars.forEach(tb => tb.remove());
+            }
+        });
+
+        const blob = await new Promise((resolve, reject) => {
+            canvas.toBlob((blob) => {
+                if (blob) {
+                    resolve(blob);
+                } else {
+                    reject(new Error('Failed to create JPG blob'));
+                }
+            }, 'image/jpeg', 0.92);
+        });
+
+        this.downloadBlob(blob, this.generateFilename('jpg'));
+    },
+
+    /**
+     * Export multiple JPG chunks when content is too large
+     */
+    async exportJPGChunked(wrapper, totalWidth, totalHeight, chunkHeight) {
+        const numChunks = Math.ceil(totalHeight / chunkHeight);
+        console.log('[DEBUG exportJPGChunked] Splitting into', numChunks, 'chunks');
+
+        const clone = wrapper.firstElementChild;
+        if (!clone) {
+            throw new Error('No content element found in wrapper');
+        }
+
+        const baseFilename = this.generateFilename('jpg').replace('.jpg', '');
+
+        for (let i = 0; i < numChunks; i++) {
+            const yOffset = i * chunkHeight;
+            const currentChunkHeight = Math.min(chunkHeight, totalHeight - yOffset);
+
+            console.log('[DEBUG exportJPGChunked] Processing chunk', i + 1, '/', numChunks);
+
+            // Create a temporary container for this chunk with proper padding
+            const paddingX = this.EXPORT_PADDING_X;
+            const paddingY = this.EXPORT_PADDING_Y;
+
+            const chunkWrapper = document.createElement('div');
+            chunkWrapper.style.cssText = `
+                position: fixed;
+                left: -9999px;
+                top: 0;
+                width: ${totalWidth}px;
+                height: ${currentChunkHeight}px;
+                background: #FFFFFF;
+                overflow: hidden;
+                padding: ${paddingY}px ${paddingX}px;
+                box-sizing: border-box;
+            `;
+
+            const chunkClone = clone.cloneNode(true);
+            chunkClone.style.cssText = `
+                position: absolute;
+                left: ${paddingX}px;
+                top: ${-yOffset + paddingY}px;
+                width: calc(100% - ${paddingX * 2}px);
+            `;
+
+            chunkWrapper.appendChild(chunkClone);
+            document.body.appendChild(chunkWrapper);
+
+            // Re-convert any SVGs in this chunk
+            await this.convertSvgsToImages(chunkWrapper);
+
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            try {
+                const canvas = await html2canvas(chunkWrapper, {
+                    width: totalWidth,
+                    height: currentChunkHeight,
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: false,
+                    backgroundColor: '#FFFFFF',
+                    logging: false,
+                    onclone: (clonedDoc) => {
+                        const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                        toolbars.forEach(tb => tb.remove());
+                    }
+                });
+
+                const blob = await new Promise((resolve, reject) => {
+                    canvas.toBlob((blob) => {
+                        if (blob) {
+                            resolve(blob);
+                        } else {
+                            reject(new Error('Failed to create JPG blob for chunk ' + (i + 1)));
+                        }
+                    }, 'image/jpeg', 0.92);
+                });
+
+                const filename = numChunks > 1 ? `${baseFilename}-part${i + 1}.jpg` : `${baseFilename}.jpg`;
+                this.downloadBlob(blob, filename);
+
+                if (i < numChunks - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+
+            } finally {
+                if (chunkWrapper.parentNode) {
+                    document.body.removeChild(chunkWrapper);
+                }
+            }
+        }
+
+        console.log('[DEBUG exportJPGChunked] All', numChunks, 'chunks exported');
+    },
+
+    /**
      * Export markdown preview as SVG
-     * Note: SVG export captures the HTML as foreignObject which may have limitations
+     * Note: SVG export captures the HTML as an embedded image in SVG format
+     * Supports chunked export for content exceeding browser canvas limits
      * @param {HTMLElement} previewElement - The markdown preview element
      */
     async exportAsSVG(previewElement) {
         this.showLoading();
+        console.log('[DEBUG exportAsSVG] Starting export...');
 
+        let wrapper = null;
         try {
-            // For SVG, we take a screenshot approach using canvas then convert
             if (typeof html2canvas === 'undefined') {
                 throw new Error('html2canvas library not loaded');
             }
 
-            const { wrapper, width, height } = await this.prepareForExport(previewElement);
+            const prepareResult = await this.prepareForExport(previewElement);
+            wrapper = prepareResult.wrapper;
+            const { width, height } = prepareResult;
 
-            const canvas = await html2canvas(wrapper, {
-                width: width,
-                height: height,
-                scale: 2,
-                useCORS: true,
-                allowTaint: true,
-                backgroundColor: '#FFFFFF',
-                logging: false
-            });
+            console.log('[DEBUG exportAsSVG] Content dimensions - width:', width, 'height:', height);
 
-            // Cleanup
-            document.body.removeChild(wrapper);
+            // Calculate if we need chunked export
+            const maxDimension = this.MAX_CANVAS_DIMENSION;
+            const needsChunking = height > maxDimension;
 
-            // Convert canvas to SVG with embedded image
-            const dataUrl = canvas.toDataURL('image/png', 1.0);
-            const svgString = `<?xml version="1.0" encoding="UTF-8"?>
+            if (needsChunking) {
+                console.log('[DEBUG exportAsSVG] Content exceeds limit, using chunked export');
+                await this.exportSVGChunked(wrapper, width, height, maxDimension);
+            } else {
+                // Single export
+                await this.exportSVGSingle(wrapper, width, height);
+            }
+
+            // Cleanup wrapper
+            if (wrapper && wrapper.parentNode) {
+                document.body.removeChild(wrapper);
+                wrapper = null;
+            }
+
+            this.hideLoading();
+            console.log('[DEBUG exportAsSVG] Export completed successfully');
+
+        } catch (error) {
+            if (wrapper && wrapper.parentNode) {
+                document.body.removeChild(wrapper);
+            }
+            this.hideLoading();
+            console.error('[DEBUG exportAsSVG] Export failed:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Export a single SVG (when content fits within limits)
+     */
+    async exportSVGSingle(wrapper, width, height) {
+        const canvas = await html2canvas(wrapper, {
+            width: width,
+            height: height,
+            scale: 2,
+            useCORS: true,
+            allowTaint: false,
+            backgroundColor: '#FFFFFF',
+            logging: false,
+            onclone: (clonedDoc) => {
+                const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                toolbars.forEach(tb => tb.remove());
+            }
+        });
+
+        const dataUrl = canvas.toDataURL('image/png', 1.0);
+        console.log('[DEBUG exportSVGSingle] dataUrl length:', dataUrl.length);
+
+        if (dataUrl === 'data:,' || dataUrl.length < 100) {
+            throw new Error('Failed to generate image - canvas is empty');
+        }
+
+        const svgString = `<?xml version="1.0" encoding="UTF-8"?>
 <svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
      width="${width * 2}" height="${height * 2}" viewBox="0 0 ${width * 2} ${height * 2}">
     <image width="${width * 2}" height="${height * 2}" xlink:href="${dataUrl}"/>
 </svg>`;
 
-            const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
-            this.downloadBlob(blob, this.generateFilename('svg'));
-            this.hideLoading();
+        const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+        this.downloadBlob(blob, this.generateFilename('svg'));
+    },
 
-        } catch (error) {
-            this.hideLoading();
-            throw error;
+    /**
+     * Export multiple SVG chunks when content is too large
+     */
+    async exportSVGChunked(wrapper, totalWidth, totalHeight, chunkHeight) {
+        const numChunks = Math.ceil(totalHeight / chunkHeight);
+        console.log('[分片导出] 共', numChunks, '个分片, 总尺寸:', totalWidth, 'x', totalHeight);
+
+        // Get the clone element inside wrapper
+        const clone = wrapper.firstElementChild;
+        if (!clone) {
+            throw new Error('No content element found in wrapper');
         }
+
+        // 检查原始内容中的 SVG 和 img 元素
+        const origSvgs = clone.querySelectorAll('svg');
+        const origImgs = clone.querySelectorAll('img[src^="data:image/svg"]');
+        console.log('[分片导出] 原始内容 - SVG数量:', origSvgs.length, ', 已转换img数量:', origImgs.length);
+
+        const baseFilename = this.generateFilename('svg').replace('.svg', '');
+
+        for (let i = 0; i < numChunks; i++) {
+            const yOffset = i * chunkHeight;
+            const currentChunkHeight = Math.min(chunkHeight, totalHeight - yOffset);
+
+            // Create a temporary container for this chunk with proper padding
+            const paddingX = this.EXPORT_PADDING_X;
+            const paddingY = this.EXPORT_PADDING_Y;
+
+            const chunkWrapper = document.createElement('div');
+            chunkWrapper.style.cssText = `
+                position: fixed;
+                left: -9999px;
+                top: 0;
+                width: ${totalWidth}px;
+                height: ${currentChunkHeight}px;
+                background: #FFFFFF;
+                overflow: hidden;
+                padding: ${paddingY}px ${paddingX}px;
+                box-sizing: border-box;
+            `;
+
+            // Clone the content and position it to show the current chunk
+            const chunkClone = clone.cloneNode(true);
+            chunkClone.style.cssText = `
+                position: absolute;
+                left: ${paddingX}px;
+                top: ${-yOffset + paddingY}px;
+                width: calc(100% - ${paddingX * 2}px);
+            `;
+
+            chunkWrapper.appendChild(chunkClone);
+            document.body.appendChild(chunkWrapper);
+
+            // 统计分片内的 SVG
+            const chunkSvgs = chunkWrapper.querySelectorAll('svg');
+            const chunkImgs = chunkWrapper.querySelectorAll('img[src^="data:image/svg"]');
+            console.log('[分片', i + 1, '/', numChunks, '] SVG:', chunkSvgs.length, 'img:', chunkImgs.length);
+
+            // Re-convert any SVGs in this chunk
+            await this.convertSvgsToImages(chunkWrapper);
+
+            // Wait for layout
+            await new Promise(resolve => setTimeout(resolve, 100));
+
+            try {
+                const canvas = await html2canvas(chunkWrapper, {
+                    width: totalWidth,
+                    height: currentChunkHeight,
+                    scale: 2,
+                    useCORS: true,
+                    allowTaint: false,
+                    backgroundColor: '#FFFFFF',
+                    logging: false,
+                    onclone: (clonedDoc) => {
+                        const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                        toolbars.forEach(tb => tb.remove());
+                    }
+                });
+
+                const dataUrl = canvas.toDataURL('image/png', 1.0);
+
+                if (dataUrl === 'data:,' || dataUrl.length < 100) {
+                    console.warn('[分片', i + 1, '] Canvas 为空!');
+                } else {
+                    console.log('[分片', i + 1, '] dataUrl长度:', dataUrl.length);
+                }
+
+                const svgString = `<?xml version="1.0" encoding="UTF-8"?>
+<svg xmlns="http://www.w3.org/2000/svg" xmlns:xlink="http://www.w3.org/1999/xlink" 
+     width="${totalWidth * 2}" height="${currentChunkHeight * 2}" viewBox="0 0 ${totalWidth * 2} ${currentChunkHeight * 2}">
+    <image width="${totalWidth * 2}" height="${currentChunkHeight * 2}" xlink:href="${dataUrl}"/>
+</svg>`;
+
+                const blob = new Blob([svgString], { type: 'image/svg+xml;charset=utf-8' });
+                const filename = numChunks > 1 ? `${baseFilename}-part${i + 1}.svg` : `${baseFilename}.svg`;
+                this.downloadBlob(blob, filename);
+
+                // Small delay between downloads to avoid browser blocking
+                if (i < numChunks - 1) {
+                    await new Promise(resolve => setTimeout(resolve, 300));
+                }
+
+            } finally {
+                // Cleanup chunk wrapper
+                if (chunkWrapper.parentNode) {
+                    document.body.removeChild(chunkWrapper);
+                }
+            }
+        }
+
+        console.log('[分片导出] 完成, 共导出', numChunks, '个文件');
     }
 };
 
