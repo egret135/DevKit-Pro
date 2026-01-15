@@ -77,6 +77,14 @@ const MarkdownExporter = {
      * @returns {Promise<{wrapper: HTMLElement, width: number, height: number}>}
      */
     async prepareForExport(previewElement) {
+        // Check if we're in fullscreen mode (check parent workspace)
+        const markdownWorkspace = document.getElementById('markdownWorkspace');
+        const isFullscreen = markdownWorkspace && markdownWorkspace.classList.contains('fullscreen-preview');
+
+        // Determine export width based on fullscreen state
+        // Normal mode: 860px max-width, Fullscreen mode: 1450px max-width
+        const exportMaxWidth = isFullscreen ? 1450 : 860;
+
         // Calculate the actual content bounds by measuring all child elements
         let maxBottom = 0;
         let maxRight = 0;
@@ -96,9 +104,8 @@ const MarkdownExporter = {
         const paddingX = this.EXPORT_PADDING_X;
         const paddingY = this.EXPORT_PADDING_Y;
 
-        // Calculate final dimensions
-        // Use the larger of: measured content bounds or scrollWidth/Height
-        let contentWidth = Math.max(maxRight, previewElement.scrollWidth) + paddingX * 2;
+        // Calculate final dimensions - use fixed export width
+        let contentWidth = exportMaxWidth + paddingX * 2;
         let contentHeight = Math.max(maxBottom, previewElement.scrollHeight) + paddingY * 2;
 
         // Store original dimensions for chunking calculation
@@ -117,18 +124,26 @@ const MarkdownExporter = {
             overflow: visible;
             z-index: -1;
             padding: ${paddingY}px ${paddingX}px;
+            box-sizing: border-box;
+            display: flex;
+            justify-content: center;
+            align-items: flex-start;
         `;
 
         // Clone the preview element
         const clone = previewElement.cloneNode(true);
-        clone.style.cssText = `
-            width: 100%;
-            height: auto;
-            overflow: visible;
-            background: transparent;
-            padding: 0;
-            margin: 0;
-        `;
+
+        // Use setProperty with 'important' priority to override CSS max-width
+        // This is more reliable than injecting style tags for html2canvas
+        clone.style.setProperty('width', `${exportMaxWidth}px`, 'important');
+        clone.style.setProperty('max-width', `${exportMaxWidth}px`, 'important');
+        clone.style.setProperty('height', 'auto', 'important');
+        clone.style.setProperty('overflow', 'visible');
+        clone.style.setProperty('background', 'transparent');
+        clone.style.setProperty('padding', '0');
+        // Center content horizontally (especially important for fullscreen mode)
+        clone.style.setProperty('margin', '0 auto');
+        clone.style.setProperty('box-sizing', 'border-box');
 
         wrapper.appendChild(clone);
         document.body.appendChild(wrapper);
@@ -137,8 +152,7 @@ const MarkdownExporter = {
         await new Promise(resolve => setTimeout(resolve, 200));
 
         // Re-measure the wrapper to get accurate final dimensions
-        const wrapperRect = wrapper.getBoundingClientRect();
-        const finalWidth = Math.max(contentWidth, wrapper.scrollWidth);
+        const finalWidth = contentWidth;
         const finalHeight = Math.max(contentHeight, wrapper.scrollHeight);
 
         // Update wrapper dimensions if needed
@@ -148,10 +162,14 @@ const MarkdownExporter = {
         // Handle SVG conversion to ensure visibility in html2canvas
         await this.convertSvgsToImages(wrapper);
 
+        console.log('[prepareForExport] Fullscreen:', isFullscreen, 'Export width:', exportMaxWidth, 'Total:', finalWidth);
+
         return {
             wrapper: wrapper,
             width: finalWidth,
-            height: finalHeight
+            height: finalHeight,
+            isFullscreen: isFullscreen,
+            exportMaxWidth: exportMaxWidth
         };
     },
 
@@ -289,9 +307,9 @@ const MarkdownExporter = {
         try {
             const prepareResult = await this.prepareForExport(previewElement);
             wrapper = prepareResult.wrapper;
-            const { width, height } = prepareResult;
+            const { width, height, isFullscreen, exportMaxWidth } = prepareResult;
 
-            console.log('[DEBUG exportAsPNG] Content dimensions - width:', width, 'height:', height);
+            console.log('[DEBUG exportAsPNG] Content dimensions - width:', width, 'height:', height, 'fullscreen:', isFullscreen);
 
             // Calculate if we need chunked export
             const maxDimension = this.MAX_CANVAS_DIMENSION;
@@ -299,9 +317,9 @@ const MarkdownExporter = {
 
             if (needsChunking) {
                 console.log('[DEBUG exportAsPNG] Content exceeds limit, using chunked export');
-                await this.exportPNGChunked(wrapper, width, height, maxDimension);
+                await this.exportPNGChunked(wrapper, width, height, maxDimension, isFullscreen, exportMaxWidth);
             } else {
-                await this.exportPNGSingle(wrapper, width, height);
+                await this.exportPNGSingle(wrapper, width, height, isFullscreen, exportMaxWidth);
             }
 
             // Cleanup wrapper
@@ -326,7 +344,7 @@ const MarkdownExporter = {
     /**
      * Export a single PNG (when content fits within limits)
      */
-    async exportPNGSingle(wrapper, width, height) {
+    async exportPNGSingle(wrapper, width, height, isFullscreen, exportMaxWidth) {
         const canvas = await html2canvas(wrapper, {
             width: width,
             height: height,
@@ -336,8 +354,18 @@ const MarkdownExporter = {
             backgroundColor: '#FFFFFF',
             logging: false,
             onclone: (clonedDoc) => {
-                const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                // Remove toolbars
+                const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons, .code-block-toolbar');
                 toolbars.forEach(tb => tb.remove());
+
+                // Force fullscreen width on markdown-preview elements
+                if (isFullscreen && exportMaxWidth) {
+                    const previews = clonedDoc.querySelectorAll('.markdown-preview');
+                    previews.forEach(preview => {
+                        preview.style.setProperty('width', `${exportMaxWidth}px`, 'important');
+                        preview.style.setProperty('max-width', `${exportMaxWidth}px`, 'important');
+                    });
+                }
             }
         });
 
@@ -357,7 +385,7 @@ const MarkdownExporter = {
     /**
      * Export multiple PNG chunks when content is too large
      */
-    async exportPNGChunked(wrapper, totalWidth, totalHeight, chunkHeight) {
+    async exportPNGChunked(wrapper, totalWidth, totalHeight, chunkHeight, isFullscreen, exportMaxWidth) {
         const numChunks = Math.ceil(totalHeight / chunkHeight);
         console.log('[DEBUG exportPNGChunked] Splitting into', numChunks, 'chunks');
 
@@ -417,8 +445,16 @@ const MarkdownExporter = {
                     backgroundColor: '#FFFFFF',
                     logging: false,
                     onclone: (clonedDoc) => {
-                        const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                        const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons, .code-block-toolbar');
                         toolbars.forEach(tb => tb.remove());
+
+                        if (isFullscreen && exportMaxWidth) {
+                            const previews = clonedDoc.querySelectorAll('.markdown-preview');
+                            previews.forEach(preview => {
+                                preview.style.setProperty('width', `${exportMaxWidth}px`, 'important');
+                                preview.style.setProperty('max-width', `${exportMaxWidth}px`, 'important');
+                            });
+                        }
                     }
                 });
 
@@ -464,9 +500,9 @@ const MarkdownExporter = {
         try {
             const prepareResult = await this.prepareForExport(previewElement);
             wrapper = prepareResult.wrapper;
-            const { width, height } = prepareResult;
+            const { width, height, isFullscreen, exportMaxWidth } = prepareResult;
 
-            console.log('[DEBUG exportAsJPG] Content dimensions - width:', width, 'height:', height);
+            console.log('[DEBUG exportAsJPG] Content dimensions - width:', width, 'height:', height, 'fullscreen:', isFullscreen);
 
             // Calculate if we need chunked export
             const maxDimension = this.MAX_CANVAS_DIMENSION;
@@ -474,9 +510,9 @@ const MarkdownExporter = {
 
             if (needsChunking) {
                 console.log('[DEBUG exportAsJPG] Content exceeds limit, using chunked export');
-                await this.exportJPGChunked(wrapper, width, height, maxDimension);
+                await this.exportJPGChunked(wrapper, width, height, maxDimension, isFullscreen, exportMaxWidth);
             } else {
-                await this.exportJPGSingle(wrapper, width, height);
+                await this.exportJPGSingle(wrapper, width, height, isFullscreen, exportMaxWidth);
             }
 
             // Cleanup wrapper
@@ -501,7 +537,7 @@ const MarkdownExporter = {
     /**
      * Export a single JPG (when content fits within limits)
      */
-    async exportJPGSingle(wrapper, width, height) {
+    async exportJPGSingle(wrapper, width, height, isFullscreen, exportMaxWidth) {
         const canvas = await html2canvas(wrapper, {
             width: width,
             height: height,
@@ -511,8 +547,16 @@ const MarkdownExporter = {
             backgroundColor: '#FFFFFF',
             logging: false,
             onclone: (clonedDoc) => {
-                const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons, .code-block-toolbar');
                 toolbars.forEach(tb => tb.remove());
+
+                if (isFullscreen && exportMaxWidth) {
+                    const previews = clonedDoc.querySelectorAll('.markdown-preview');
+                    previews.forEach(preview => {
+                        preview.style.setProperty('width', `${exportMaxWidth}px`, 'important');
+                        preview.style.setProperty('max-width', `${exportMaxWidth}px`, 'important');
+                    });
+                }
             }
         });
 
@@ -532,7 +576,7 @@ const MarkdownExporter = {
     /**
      * Export multiple JPG chunks when content is too large
      */
-    async exportJPGChunked(wrapper, totalWidth, totalHeight, chunkHeight) {
+    async exportJPGChunked(wrapper, totalWidth, totalHeight, chunkHeight, isFullscreen, exportMaxWidth) {
         const numChunks = Math.ceil(totalHeight / chunkHeight);
         console.log('[DEBUG exportJPGChunked] Splitting into', numChunks, 'chunks');
 
@@ -592,8 +636,16 @@ const MarkdownExporter = {
                     backgroundColor: '#FFFFFF',
                     logging: false,
                     onclone: (clonedDoc) => {
-                        const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                        const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons, .code-block-toolbar');
                         toolbars.forEach(tb => tb.remove());
+
+                        if (isFullscreen && exportMaxWidth) {
+                            const previews = clonedDoc.querySelectorAll('.markdown-preview');
+                            previews.forEach(preview => {
+                                preview.style.setProperty('width', `${exportMaxWidth}px`, 'important');
+                                preview.style.setProperty('max-width', `${exportMaxWidth}px`, 'important');
+                            });
+                        }
                     }
                 });
 
@@ -642,9 +694,9 @@ const MarkdownExporter = {
 
             const prepareResult = await this.prepareForExport(previewElement);
             wrapper = prepareResult.wrapper;
-            const { width, height } = prepareResult;
+            const { width, height, isFullscreen, exportMaxWidth } = prepareResult;
 
-            console.log('[DEBUG exportAsSVG] Content dimensions - width:', width, 'height:', height);
+            console.log('[DEBUG exportAsSVG] Content dimensions - width:', width, 'height:', height, 'fullscreen:', isFullscreen);
 
             // Calculate if we need chunked export
             const maxDimension = this.MAX_CANVAS_DIMENSION;
@@ -652,10 +704,10 @@ const MarkdownExporter = {
 
             if (needsChunking) {
                 console.log('[DEBUG exportAsSVG] Content exceeds limit, using chunked export');
-                await this.exportSVGChunked(wrapper, width, height, maxDimension);
+                await this.exportSVGChunked(wrapper, width, height, maxDimension, isFullscreen, exportMaxWidth);
             } else {
                 // Single export
-                await this.exportSVGSingle(wrapper, width, height);
+                await this.exportSVGSingle(wrapper, width, height, isFullscreen, exportMaxWidth);
             }
 
             // Cleanup wrapper
@@ -680,7 +732,7 @@ const MarkdownExporter = {
     /**
      * Export a single SVG (when content fits within limits)
      */
-    async exportSVGSingle(wrapper, width, height) {
+    async exportSVGSingle(wrapper, width, height, isFullscreen, exportMaxWidth) {
         const canvas = await html2canvas(wrapper, {
             width: width,
             height: height,
@@ -690,8 +742,16 @@ const MarkdownExporter = {
             backgroundColor: '#FFFFFF',
             logging: false,
             onclone: (clonedDoc) => {
-                const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons, .code-block-toolbar');
                 toolbars.forEach(tb => tb.remove());
+
+                if (isFullscreen && exportMaxWidth) {
+                    const previews = clonedDoc.querySelectorAll('.markdown-preview');
+                    previews.forEach(preview => {
+                        preview.style.setProperty('width', `${exportMaxWidth}px`, 'important');
+                        preview.style.setProperty('max-width', `${exportMaxWidth}px`, 'important');
+                    });
+                }
             }
         });
 
@@ -715,7 +775,7 @@ const MarkdownExporter = {
     /**
      * Export multiple SVG chunks when content is too large
      */
-    async exportSVGChunked(wrapper, totalWidth, totalHeight, chunkHeight) {
+    async exportSVGChunked(wrapper, totalWidth, totalHeight, chunkHeight, isFullscreen, exportMaxWidth) {
         const numChunks = Math.ceil(totalHeight / chunkHeight);
         console.log('[分片导出] 共', numChunks, '个分片, 总尺寸:', totalWidth, 'x', totalHeight);
 
@@ -786,8 +846,16 @@ const MarkdownExporter = {
                     backgroundColor: '#FFFFFF',
                     logging: false,
                     onclone: (clonedDoc) => {
-                        const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons');
+                        const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons, .code-block-toolbar');
                         toolbars.forEach(tb => tb.remove());
+
+                        if (isFullscreen && exportMaxWidth) {
+                            const previews = clonedDoc.querySelectorAll('.markdown-preview');
+                            previews.forEach(preview => {
+                                preview.style.setProperty('width', `${exportMaxWidth}px`, 'important');
+                                preview.style.setProperty('max-width', `${exportMaxWidth}px`, 'important');
+                            });
+                        }
                     }
                 });
 

@@ -62,6 +62,7 @@
         copyMarkdownHtmlBtn: document.getElementById('copyMarkdownHtmlBtn'),
         exportMarkdownDropdown: document.getElementById('exportMarkdownDropdown'),
         exportMarkdownBtn: document.getElementById('exportMarkdownBtn'),
+        toggleFullscreenBtn: document.getElementById('toggleFullscreenBtn'),
 
         // Toolbox Elements
         toolboxInput: document.getElementById('toolboxInput'),
@@ -230,6 +231,18 @@
         elements.exportMarkdownDropdown.addEventListener('click', handleMarkdownExport);
         document.addEventListener('click', closeExportDropdown);
 
+        // Markdown fullscreen preview toggle
+        if (elements.toggleFullscreenBtn) {
+            elements.toggleFullscreenBtn.addEventListener('click', toggleMarkdownFullscreen);
+        }
+        // ESC key to exit fullscreen
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && elements.markdownWorkspace.classList.contains('fullscreen-preview')) {
+                elements.markdownWorkspace.classList.remove('fullscreen-preview');
+                setStatus('退出全屏', 'ready');
+            }
+        });
+
         // Attach event listeners - Toolbox
         elements.modeToolbox.addEventListener('click', () => switchMode('toolbox'));
         // Note: Toolbox tool-specific event handlers are now in tools/toolbox.js
@@ -382,6 +395,17 @@
                 const html = await MarkdownRenderer.render(input);
                 elements.markdownPreview.innerHTML = html;
                 lastRenderedHtml = html;
+
+                // Initialize code block enhancer (format + copy buttons)
+                if (typeof CodeBlockEnhancer !== 'undefined') {
+                    CodeBlockEnhancer.init(elements.markdownPreview, { autoFormat: true });
+                }
+
+                // Apply syntax highlighting with Prism.js
+                if (typeof Prism !== 'undefined') {
+                    Prism.highlightAllUnder(elements.markdownPreview);
+                }
+
                 setStatus('渲染完成', 'success');
             } else {
                 throw new Error('Markdown 渲染器未加载');
@@ -398,6 +422,12 @@
         elements.markdownPreview.innerHTML = '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
         lastRenderedHtml = '';
         setStatus('Markdown 已清除', 'ready');
+    }
+
+    // Toggle fullscreen preview mode (only for Markdown workspace)
+    function toggleMarkdownFullscreen() {
+        const isFullscreen = elements.markdownWorkspace.classList.toggle('fullscreen-preview');
+        setStatus(isFullscreen ? '全屏预览 (按 Esc 退出)' : '正常视图', 'ready');
     }
 
     async function handleCopyMarkdownHtml() {

@@ -18,6 +18,8 @@
     <link rel="stylesheet" href="lib/codemirror/theme/monokai.css">
     <link rel="stylesheet" href="lib/codemirror/theme/eclipse.css">
     <link rel="stylesheet" href="lib/codemirror/theme/neo.css">
+    <!-- Prism.js Theme for Code Highlighting -->
+    <link rel="stylesheet" href="lib/prism/prism-dracula.css">
     <!-- Custom Editor Styles -->
     <style>
         .CodeMirror {
@@ -259,6 +261,19 @@
                             <span>渲染预览</span>
                         </div>
                         <div class="panel-actions">
+                            <button id="toggleFullscreenBtn" class="btn-ghost" title="全屏预览 (Esc 退出)">
+                                <svg class="icon-expand" width="16" height="16" viewBox="0 0 24 24" fill="none">
+                                    <path
+                                        d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"
+                                        stroke="currentColor" stroke-width="2" stroke-linecap="round"
+                                        stroke-linejoin="round" />
+                                </svg>
+                                <svg class="icon-collapse hidden" width="16" height="16" viewBox="0 0 24 24"
+                                    fill="none">
+                                    <path d="M5 9h4V5M19 9h-4V5M5 15h4v4M19 15h-4v4" stroke="currentColor"
+                                        stroke-width="2" stroke-linecap="round" stroke-linejoin="round" />
+                                </svg>
+                            </button>
                             <button id="copyMarkdownHtmlBtn" class="btn-ghost">
                                 <svg width="16" height="16" viewBox="0 0 24 24" fill="none">
                                     <rect x="8" y="8" width="13" height="13" rx="2" stroke="currentColor"
@@ -619,6 +634,36 @@
     <script src="lib/toml.min.js"></script>
     <script src="lib/fast-xml-parser.min.js"></script>
 
+    <!-- Prettier (Code Formatter for Markdown Preview) -->
+    <script src="lib/prettier/standalone.min.js"></script>
+    <script src="lib/prettier/parser-babel.min.js"></script>
+    <script src="lib/prettier/parser-html.min.js"></script>
+    <script src="lib/prettier/parser-postcss.min.js"></script>
+    <script src="lib/prettier/parser-php.min.js"></script>
+
+    <!-- Prism.js (Code Syntax Highlighting for Markdown Preview) -->
+    <script src="lib/prism/prism.min.js"></script>
+    <!-- Dependencies must load first -->
+    <script src="lib/prism/prism-clike.min.js"></script>
+    <script src="lib/prism/prism-markup-templating.min.js"></script>
+    <!-- Then language packs -->
+    <script src="lib/prism/prism-go.min.js"></script>
+    <script src="lib/prism/prism-python.min.js"></script>
+    <script src="lib/prism/prism-php.min.js"></script>
+    <script src="lib/prism/prism-sql.min.js"></script>
+    <script src="lib/prism/prism-json.min.js"></script>
+    <script src="lib/prism/prism-yaml.min.js"></script>
+    <script src="lib/prism/prism-typescript.min.js"></script>
+    <script src="lib/prism/prism-c.min.js"></script>
+    <script src="lib/prism/prism-cpp.min.js"></script>
+    <script src="lib/prism/prism-java.min.js"></script>
+    <script src="lib/prism/prism-rust.min.js"></script>
+    <script src="lib/prism/prism-ruby.min.js"></script>
+    <script src="lib/prism/prism-swift.min.js"></script>
+    <script src="lib/prism/prism-kotlin.min.js"></script>
+    <script src="lib/prism/prism-docker.min.js"></script>
+    <script src="lib/prism/prism-bash.min.js"></script>
+
     <!-- CodeMirror Libraries -->
     <script src="lib/codemirror/lib/codemirror.js"></script>
     <script src="lib/codemirror/mode/sql/sql.js"></script>
@@ -655,6 +700,8 @@
     <script src="utils/markdown-exporter.js"></script>
     <script src="utils/image-lightbox.js"></script>
     <script src="utils/auto-formatter.js"></script>
+    <script src="utils/markdown-code-formatter.js"></script>
+    <script src="utils/code-block-enhancer.js"></script>
     <script src="tools/toolbox.js"></script>
     <script src="config/settings.js"></script>
     <script src="app.js"></script>

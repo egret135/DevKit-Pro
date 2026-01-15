@@ -209,6 +209,11 @@ const MarkdownRenderer = {
             }
         }
 
+        // Step 6: Enhance code blocks with toolbar (format + copy buttons)
+        if (typeof CodeBlockEnhancer !== 'undefined') {
+            html = CodeBlockEnhancer.processCodeBlocks(html);
+        }
+
         return html;
     },
 

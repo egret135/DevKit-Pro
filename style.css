@@ -279,6 +279,49 @@ body {
     padding-left: 4px;
 }
 
+/* ==================== Markdown Preview Fullscreen Mode ==================== */
+/* Only affects markdownWorkspace, not other panels */
+#markdownWorkspace.fullscreen-preview {
+    grid-template-columns: 1fr;
+}
+
+#markdownWorkspace.fullscreen-preview>.panel:first-child {
+    display: none;
+}
+
+#markdownWorkspace.fullscreen-preview>.panel:last-child {
+    border-left: none;
+}
+
+/* Fullscreen button icon toggle - Important: use !important to override .hidden class */
+#toggleFullscreenBtn .icon-expand {
+    display: inline-block !important;
+}
+
+#toggleFullscreenBtn .icon-collapse {
+    display: none !important;
+}
+
+#markdownWorkspace.fullscreen-preview #toggleFullscreenBtn .icon-expand {
+    display: none !important;
+}
+
+#markdownWorkspace.fullscreen-preview #toggleFullscreenBtn .icon-collapse {
+    display: inline-block !important;
+}
+
+/* Expand content width in fullscreen mode */
+#markdownWorkspace.fullscreen-preview .markdown-preview {
+    max-width: 1450px;
+    padding: 40px 80px;
+}
+
+/* Transition for smooth effect */
+#markdownWorkspace {
+    transition: grid-template-columns 0.2s ease;
+}
+
+
 .panel-header.small {
     min-height: 32px;
     padding: var(--space-2) var(--space-6);
@@ -1000,6 +1043,108 @@ body {
 .markdown-preview input[type="checkbox"] {
     margin-right: 0.5rem;
     vertical-align: middle;
+}
+
+/* ==================== Code Block Container with Toolbar ==================== */
+.markdown-preview .code-block-container {
+    margin: 1.2rem 0;
+    border-radius: 6px;
+    overflow: hidden;
+    background: #23241F;
+    border: 1px solid #3e3e3e;
+    position: relative;
+}
+
+.markdown-preview .code-block-container pre {
+    margin: 0;
+    border-radius: 0;
+    border: none;
+}
+
+.code-block-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 6px 12px;
+    background: #1a1a1a;
+    border-bottom: 1px solid #3e3e3e;
+}
+
+.code-toolbar-left {
+    display: flex;
+    gap: 8px;
+    opacity: 0;
+    visibility: hidden;
+    transition: opacity 0.2s ease, visibility 0.2s ease;
+}
+
+/* Show buttons on hover */
+.markdown-preview .code-block-container:hover .code-toolbar-left {
+    opacity: 1;
+    visibility: visible;
+}
+
+.code-toolbar-btn {
+    display: flex;
+    align-items: center;
+    gap: 4px;
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', sans-serif;
+    color: #a0a0a0;
+    background: transparent;
+    border: 1px solid #4a4a4a;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+}
+
+.code-toolbar-btn:hover {
+    color: #ffffff;
+    background: #2a2a2a;
+    border-color: #5a5a5a;
+}
+
+.code-toolbar-btn:active {
+    transform: translateY(1px);
+}
+
+.code-toolbar-btn.loading {
+    opacity: 0.6;
+    cursor: wait;
+}
+
+.code-toolbar-btn.copied {
+    color: #4ade80;
+    border-color: #4ade80;
+}
+
+.code-toolbar-btn.feedback-success {
+    color: #4ade80;
+    border-color: #4ade80;
+}
+
+.code-toolbar-btn.feedback-info {
+    color: #60a5fa;
+    border-color: #60a5fa;
+}
+
+.code-toolbar-btn.feedback-error {
+    color: #f87171;
+    border-color: #f87171;
+}
+
+.code-toolbar-btn svg {
+    flex-shrink: 0;
+}
+
+.code-language-label {
+    font-size: 11px;
+    font-weight: 600;
+    color: #6a6a6a;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
 }
 
 /* ==================== Dropdown Menu ==================== */
