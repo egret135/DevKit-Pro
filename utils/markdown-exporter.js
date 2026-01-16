@@ -85,49 +85,106 @@ const MarkdownExporter = {
         // Normal mode: 860px max-width, Fullscreen mode: 1450px max-width
         const exportMaxWidth = isFullscreen ? 1450 : 860;
 
-        // Calculate the actual content bounds by measuring all child elements
-        let maxBottom = 0;
-        let maxRight = 0;
-        const previewRect = previewElement.getBoundingClientRect();
-
-        // Iterate through all descendants to find the true content bounds
-        const allElements = previewElement.querySelectorAll('*');
-        allElements.forEach(el => {
-            const rect = el.getBoundingClientRect();
-            const bottom = rect.bottom - previewRect.top;
-            const right = rect.right - previewRect.left;
-            if (bottom > maxBottom) maxBottom = bottom;
-            if (right > maxRight) maxRight = right;
-        });
-
         // Add padding for visual comfort (matches the container padding)
         const paddingX = this.EXPORT_PADDING_X;
         const paddingY = this.EXPORT_PADDING_Y;
 
-        // Calculate final dimensions - use fixed export width
-        let contentWidth = exportMaxWidth + paddingX * 2;
-        let contentHeight = Math.max(maxBottom, previewElement.scrollHeight) + paddingY * 2;
+        // === FIX: Accurate height measurement ===
+        // Step 1: Temporarily expand the parent container to measure true content height
+        const parentContainer = previewElement.parentElement;
+        const originalParentStyles = {
+            overflow: parentContainer.style.overflow,
+            height: parentContainer.style.height,
+            maxHeight: parentContainer.style.maxHeight
+        };
 
-        // Store original dimensions for chunking calculation
-        const originalWidth = contentWidth;
-        const originalHeight = contentHeight;
+        // Temporarily remove scroll constraints
+        parentContainer.style.overflow = 'visible';
+        parentContainer.style.height = 'auto';
+        parentContainer.style.maxHeight = 'none';
+
+        // Force reflow
+        void previewElement.offsetHeight;
+
+        // Step 2: Create a temporary offscreen container to measure the true height
+        const measureContainer = document.createElement('div');
+        measureContainer.style.cssText = `
+            position: absolute;
+            left: -9999px;
+            top: 0;
+            width: ${exportMaxWidth}px;
+            height: auto;
+            overflow: visible;
+            visibility: hidden;
+        `;
+
+        const measureClone = previewElement.cloneNode(true);
+        measureClone.style.cssText = `
+            width: ${exportMaxWidth}px;
+            max-width: ${exportMaxWidth}px;
+            height: auto;
+            overflow: visible;
+            margin: 0;
+            padding: 0;
+        `;
+
+        measureContainer.appendChild(measureClone);
+        document.body.appendChild(measureContainer);
+
+        // Wait for layout
+        await new Promise(resolve => setTimeout(resolve, 100));
+
+        // Measure true content height from the offscreen clone
+        const measuredHeight = measureClone.scrollHeight;
+        const measuredOffsetHeight = measureClone.offsetHeight;
+
+        // Also measure by iterating through children
+        let maxChildBottom = 0;
+        const allChildren = measureClone.querySelectorAll('*');
+        allChildren.forEach(el => {
+            const bottom = el.offsetTop + el.offsetHeight;
+            if (bottom > maxChildBottom) maxChildBottom = bottom;
+        });
+
+        // Use the maximum of all measurements for safety
+        const trueContentHeight = Math.max(measuredHeight, measuredOffsetHeight, maxChildBottom);
+
+        // Remove measure container
+        document.body.removeChild(measureContainer);
+
+        // Restore parent container styles
+        parentContainer.style.overflow = originalParentStyles.overflow;
+        parentContainer.style.height = originalParentStyles.height;
+        parentContainer.style.maxHeight = originalParentStyles.maxHeight;
+
+        // Calculate initial dimensions with padding
+        const contentWidth = exportMaxWidth + paddingX * 2;
+        // Initial height estimate (will be re-measured after SVG conversion)
+        const initialHeightEstimate = trueContentHeight + paddingY * 2;
+
+        console.log('[prepareForExport] Initial height measurement:', {
+            measuredHeight,
+            measuredOffsetHeight,
+            maxChildBottom,
+            trueContentHeight,
+            initialHeightEstimate
+        });
 
         // Create a wrapper div that will contain the clone
+        // IMPORTANT: Use auto height initially to allow content to expand naturally
         const wrapper = document.createElement('div');
         wrapper.style.cssText = `
             position: fixed;
             left: -9999px;
             top: 0;
             width: ${contentWidth}px;
-            height: ${contentHeight}px;
+            height: auto;
+            min-height: ${initialHeightEstimate}px;
             background: #FFFFFF;
             overflow: visible;
             z-index: -1;
             padding: ${paddingY}px ${paddingX}px;
             box-sizing: border-box;
-            display: flex;
-            justify-content: center;
-            align-items: flex-start;
         `;
 
         // Clone the preview element
@@ -138,31 +195,65 @@ const MarkdownExporter = {
         clone.style.setProperty('width', `${exportMaxWidth}px`, 'important');
         clone.style.setProperty('max-width', `${exportMaxWidth}px`, 'important');
         clone.style.setProperty('height', 'auto', 'important');
-        clone.style.setProperty('overflow', 'visible');
+        clone.style.setProperty('min-height', 'auto', 'important');
+        clone.style.setProperty('max-height', 'none', 'important');
+        clone.style.setProperty('overflow', 'visible', 'important');
         clone.style.setProperty('background', 'transparent');
         clone.style.setProperty('padding', '0');
-        // Center content horizontally (especially important for fullscreen mode)
-        clone.style.setProperty('margin', '0 auto');
+        clone.style.setProperty('margin', '0');
         clone.style.setProperty('box-sizing', 'border-box');
+        clone.style.setProperty('display', 'block', 'important');
 
         wrapper.appendChild(clone);
         document.body.appendChild(wrapper);
 
-        // Wait for layout and any images to load
-        await new Promise(resolve => setTimeout(resolve, 200));
-
-        // Re-measure the wrapper to get accurate final dimensions
-        const finalWidth = contentWidth;
-        const finalHeight = Math.max(contentHeight, wrapper.scrollHeight);
-
-        // Update wrapper dimensions if needed
-        wrapper.style.width = `${finalWidth}px`;
-        wrapper.style.height = `${finalHeight}px`;
+        // Wait for initial layout
+        await new Promise(resolve => setTimeout(resolve, 100));
 
         // Handle SVG conversion to ensure visibility in html2canvas
+        // IMPORTANT: Do this BEFORE final height measurement
         await this.convertSvgsToImages(wrapper);
 
-        console.log('[prepareForExport] Fullscreen:', isFullscreen, 'Export width:', exportMaxWidth, 'Total:', finalWidth);
+        // Wait for SVG conversion to complete and layout to stabilize
+        await new Promise(resolve => setTimeout(resolve, 200));
+
+        // === FINAL HEIGHT MEASUREMENT (after SVG conversion) ===
+        // Measure the clone's actual rendered height
+        const cloneScrollHeight = clone.scrollHeight;
+        const cloneOffsetHeight = clone.offsetHeight;
+
+        // Also measure by iterating through all children of the clone
+        let maxCloneChildBottom = 0;
+        const cloneChildren = clone.querySelectorAll('*');
+        cloneChildren.forEach(el => {
+            const bottom = el.offsetTop + el.offsetHeight;
+            if (bottom > maxCloneChildBottom) maxCloneChildBottom = bottom;
+        });
+
+        // Use the maximum of all measurements
+        const actualCloneHeight = Math.max(cloneScrollHeight, cloneOffsetHeight, maxCloneChildBottom);
+
+        // Add padding and safety margin
+        const SAFETY_MARGIN = 5; // Small safety margin to prevent edge-case truncation
+        const finalWidth = contentWidth;
+        const finalHeight = actualCloneHeight + paddingY * 2 + SAFETY_MARGIN;
+
+        console.log('[prepareForExport] Final height measurement (after SVG conversion):', {
+            cloneScrollHeight,
+            cloneOffsetHeight,
+            maxCloneChildBottom,
+            actualCloneHeight,
+            finalHeight
+        });
+
+        // Update wrapper to use fixed final dimensions for html2canvas
+        wrapper.style.height = `${finalHeight}px`;
+        wrapper.style.minHeight = `${finalHeight}px`;
+
+        // Final wait for layout to settle
+        await new Promise(resolve => setTimeout(resolve, 50));
+
+        console.log('[prepareForExport] Fullscreen:', isFullscreen, 'Export width:', exportMaxWidth, 'Final dimensions:', finalWidth, 'x', finalHeight);
 
         return {
             wrapper: wrapper,
