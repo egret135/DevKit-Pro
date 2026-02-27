@@ -39,12 +39,18 @@
 
 ### 🛠️ 开发者工具箱
 集成常用开发工具，一站式解决日常需求：
-- **时间戳转换**：Unix 时间戳 (秒/毫秒) ↔️ 日期时间，支持多时区
+- **时间戳转换**：Unix 时间戳 (秒/毫秒) ↔️ 日期时间，翻页时钟实时显示
 - **Base64 编解码**：文本与 Base64 互转
 - **URL 编解码**：URL 参数编码与解码
 - **JWT 解析**：解析 JWT Token，显示 Header/Payload/过期状态
 - **哈希计算**：MD5、SHA-1、SHA-256、SHA-512
 - **ID 生成器**：批量生成 UUID v4、Snowflake ID、NanoID
+- **密码生成器**：自定义长度与字符类型，批量生成安全密码
+- **正则测试**：正则表达式匹配与替换测试
+- **JSON Diff**：两段 JSON 结构化差异对比
+- **颜色转换**：HEX / RGB / HSL 颜色格式互转
+- **Cron 解析**：Cron 表达式含义解析与下次执行时间预览
+- **代码对比**：可编辑内联 Diff 视图，输入即对比，支持差异导航(↑/↓)与全屏
 
 ### 📄 配置文件转换
 支持多种配置格式互相转换：
@@ -82,7 +88,7 @@
 - **转换器**：DDL/JSON 转 Go Struct / Protocol Buffer
 - **DDL 对比**：生成 ALTER 语句
 - **Markdown**：预览与导出
-- **工具箱**：时间戳、Base64、URL、JWT、哈希、ID生成
+- **工具箱**：时间戳、Base64、URL、JWT、哈希、ID生成、密码、正则、JSON Diff、颜色、Cron、代码对比
 
 ### 编辑器设置
 
@@ -164,11 +170,16 @@ flowchart TD
 \`\`\`
 ```
 
+### ⛶ 全屏模式
+- **应用全屏**：点击顶部全屏按钮，整个页面进入浏览器全屏
+- **代码对比全屏**：代码对比工具栏内置独立全屏按钮
+- 按 `Esc` 退出全屏
+
 ## ⌨️ 快捷键
 
 - `Cmd/Ctrl + Enter`：转换
 - `Cmd/Ctrl + K`：清除
-- `Esc`：关闭设置弹窗
+- `Esc`：关闭设置弹窗 / 退出全屏
 
 ## 🛠️ 技术栈
 
@@ -177,6 +188,8 @@ flowchart TD
 - [Marked.js](https://marked.js.org/) - Markdown 解析
 - [Mermaid.js](https://mermaid.js.org/) - 图表渲染
 - [html2canvas](https://html2canvas.hertzen.com/) - 图片导出
+- [Prism.js](https://prismjs.com/) - 代码高亮
+- [Prettier](https://prettier.io/) - 代码格式化
 - Manifest V3
 
 ## 📁 项目结构
@@ -184,9 +197,13 @@ flowchart TD
 ```
 devkit-pro/
 ├── index.html              # 主界面
-├── app.js                  # 主逻辑
+├── app.js                  # 应用调度器 (共享状态、模式切换、设置)
 ├── style.css               # 样式
 ├── manifest.json           # 扩展配置
+├── controllers/            # 功能控制器 (DevKit 命名空间)
+│   ├── converter-controller.js   # DDL/JSON 转换逻辑
+│   ├── diff-controller.js        # DDL 差异对比逻辑
+│   └── markdown-controller.js    # Markdown 预览/导出逻辑
 ├── lib/                    # 第三方库
 │   ├── codemirror/         # 编辑器核心及模式
 │   ├── marked.min.js
@@ -214,14 +231,16 @@ devkit-pro/
 │   └── diff-engine.js
 ├── utils/
 │   ├── editor-manager.js   # 编辑器管理
-│   ├── history-manager.js  # 历史管理(已禁用)
 │   ├── type-mapper.js
 │   ├── protobuf-type-mapper.js
 │   ├── formatter.js
 │   ├── exporter.js
 │   ├── chart-exporter.js
 │   ├── markdown-exporter.js
-│   └── auto-formatter.js
+│   ├── auto-formatter.js
+│   ├── code-block-enhancer.js
+│   ├── markdown-code-formatter.js
+│   └── image-lightbox.js
 ├── tools/
 │   └── toolbox.js          # 开发者工具箱
 └── config/
