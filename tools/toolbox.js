@@ -1,11 +1,20 @@
 // Toolbox - Developer Tools Collection
 // Handles all toolbox functionality with new UI layout
 
-const ToolboxController = (function () {
+(function () {
     'use strict';
+    const DevKit = window.DevKit = window.DevKit || {};
 
     let currentTool = 'timestamp';
     let timestampInterval = null;
+
+    function debounce(func, wait) {
+        let timeout;
+        return function (...args) {
+            clearTimeout(timeout);
+            timeout = setTimeout(() => func.apply(this, args), wait);
+        };
+    }
 
     // Initialize toolbox
     function init() {
@@ -23,6 +32,11 @@ const ToolboxController = (function () {
         initHash();
         initUuid();
         initPassword();
+        initRegex();
+        initJsonDiff();
+        initColor();
+        initCron();
+        initCodeDiff();
     }
 
     function switchTool(tool) {
@@ -565,23 +579,41 @@ const ToolboxController = (function () {
     }
 
     function generateUUIDv4() {
-        return 'xxxxxxxx-xxxx-4xxx-yxxx-xxxxxxxxxxxx'.replace(/[xy]/g, function (c) {
-            var r = Math.random() * 16 | 0, v = c == 'x' ? r : (r & 0x3 | 0x8);
-            return v.toString(16);
-        });
+        const bytes = new Uint8Array(16);
+        crypto.getRandomValues(bytes);
+        bytes[6] = (bytes[6] & 0x0f) | 0x40;
+        bytes[8] = (bytes[8] & 0x3f) | 0x80;
+        const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+        return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
     }
 
+    let snowflakeSequence = 0;
+    let snowflakeLastTs = 0;
+
     function generateSnowflakeId() {
-        const timestamp = Date.now();
-        const random = Math.floor(Math.random() * 1000000);
-        return (BigInt(timestamp) << BigInt(22) | BigInt(random)).toString();
+        let timestamp = Date.now();
+        if (timestamp === snowflakeLastTs) {
+            snowflakeSequence = (snowflakeSequence + 1) & 0xFFF;
+            if (snowflakeSequence === 0) {
+                while (timestamp <= snowflakeLastTs) { timestamp = Date.now(); }
+            }
+        } else {
+            snowflakeSequence = 0;
+        }
+        snowflakeLastTs = timestamp;
+        const workerId = BigInt(1);
+        return ((BigInt(timestamp) - BigInt(1288834974657)) << BigInt(22) |
+            (workerId << BigInt(12)) |
+            BigInt(snowflakeSequence)).toString();
     }
 
     function generateNanoId(size = 21) {
         const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
+        const randomValues = new Uint32Array(size);
+        crypto.getRandomValues(randomValues);
         let id = '';
         for (let i = 0; i < size; i++) {
-            id += alphabet[Math.floor(Math.random() * alphabet.length)];
+            id += alphabet[randomValues[i] % alphabet.length];
         }
         return id;
     }
@@ -710,14 +742,665 @@ const ToolboxController = (function () {
         });
     }
 
-    // Public API
-    return {
-        init,
-        switchTool
-    };
-})();
+    // ==================== Regex Tester ====================
+    function initRegex() {
+        document.getElementById('regexTestBtn')?.addEventListener('click', () => {
+            const pattern = document.getElementById('regexPattern')?.value;
+            const flags = document.getElementById('regexFlags')?.value || '';
+            const testStr = document.getElementById('regexTestStr')?.value || '';
+            const resultEl = document.getElementById('regexResult');
+            const countEl = document.getElementById('regexMatchCount');
+            if (!pattern || !resultEl) return;
 
-// Initialize on DOM ready
-document.addEventListener('DOMContentLoaded', () => {
-    ToolboxController.init();
-});
+            try {
+                const regex = new RegExp(pattern, flags);
+                const matches = [];
+                let match;
+
+                if (flags.includes('g')) {
+                    while ((match = regex.exec(testStr)) !== null) {
+                        matches.push(`匹配 ${matches.length + 1}: "${match[0]}"  位置: ${match.index}`
+                            + (match.length > 1 ? `  分组: [${match.slice(1).map(g => `"${g || ''}"`).join(', ')}]` : ''));
+                        if (match.index === regex.lastIndex) regex.lastIndex++;
+                    }
+                } else {
+                    match = regex.exec(testStr);
+                    if (match) {
+                        matches.push(`匹配: "${match[0]}"  位置: ${match.index}`
+                            + (match.length > 1 ? `  分组: [${match.slice(1).map(g => `"${g || ''}"`).join(', ')}]` : ''));
+                    }
+                }
+
+                if (countEl) countEl.value = `${matches.length} 个匹配`;
+                resultEl.value = matches.length ? matches.join('\n') : '无匹配';
+            } catch (e) {
+                if (countEl) countEl.value = '错误';
+                resultEl.value = '正则表达式错误: ' + e.message;
+            }
+        });
+
+        document.getElementById('regexReplaceBtn')?.addEventListener('click', () => {
+            const pattern = document.getElementById('regexPattern')?.value;
+            const flags = document.getElementById('regexFlags')?.value || '';
+            const testStr = document.getElementById('regexTestStr')?.value || '';
+            const replaceStr = document.getElementById('regexReplaceStr')?.value || '';
+            const resultEl = document.getElementById('regexResult');
+            const countEl = document.getElementById('regexMatchCount');
+            if (!pattern || !resultEl) return;
+
+            try {
+                const regex = new RegExp(pattern, flags);
+                const result = testStr.replace(regex, replaceStr);
+                if (countEl) countEl.value = '已替换';
+                resultEl.value = result;
+            } catch (e) {
+                if (countEl) countEl.value = '错误';
+                resultEl.value = '正则表达式错误: ' + e.message;
+            }
+        });
+    }
+
+    // ==================== JSON Diff ====================
+    function initJsonDiff() {
+        document.getElementById('jsonDiffBtn')?.addEventListener('click', () => {
+            const aStr = document.getElementById('jsonDiffA')?.value || '';
+            const bStr = document.getElementById('jsonDiffB')?.value || '';
+            const resultEl = document.getElementById('jsonDiffResult');
+            if (!resultEl) return;
+
+            try {
+                const a = JSON.parse(aStr);
+                const b = JSON.parse(bStr);
+                const diff = diffObjects(a, b, '');
+                resultEl.innerHTML = diff.length ? diff.join('\n') : '<span class="diff-unchanged">两个 JSON 完全相同</span>';
+            } catch (e) {
+                resultEl.innerHTML = `<span class="diff-removed">JSON 解析错误: ${escapeHtmlStr(e.message)}</span>`;
+            }
+        });
+
+        document.getElementById('jsonDiffSwapBtn')?.addEventListener('click', () => {
+            const aEl = document.getElementById('jsonDiffA');
+            const bEl = document.getElementById('jsonDiffB');
+            if (aEl && bEl) {
+                const tmp = aEl.value;
+                aEl.value = bEl.value;
+                bEl.value = tmp;
+            }
+        });
+    }
+
+    function diffObjects(a, b, path) {
+        const lines = [];
+        const allKeys = new Set([...Object.keys(a || {}), ...Object.keys(b || {})]);
+
+        for (const key of allKeys) {
+            const fullPath = path ? `${path}.${key}` : key;
+            const escapedPath = escapeHtmlStr(fullPath);
+            const inA = a != null && key in a;
+            const inB = b != null && key in b;
+
+            if (!inA) {
+                lines.push(`<span class="diff-line diff-added">+ <span class="diff-key">${escapedPath}</span>: ${jsonVal(b[key])}</span>`);
+            } else if (!inB) {
+                lines.push(`<span class="diff-line diff-removed">- <span class="diff-key">${escapedPath}</span>: ${jsonVal(a[key])}</span>`);
+            } else if (typeof a[key] === 'object' && a[key] !== null && typeof b[key] === 'object' && b[key] !== null
+                && !Array.isArray(a[key]) && !Array.isArray(b[key])) {
+                lines.push(...diffObjects(a[key], b[key], fullPath));
+            } else if (JSON.stringify(a[key]) !== JSON.stringify(b[key])) {
+                lines.push(`<span class="diff-line diff-removed">- <span class="diff-key">${escapedPath}</span>: ${jsonVal(a[key])}</span>`);
+                lines.push(`<span class="diff-line diff-added">+ <span class="diff-key">${escapedPath}</span>: ${jsonVal(b[key])}</span>`);
+            }
+        }
+        return lines;
+    }
+
+    function jsonVal(v) {
+        if (typeof v === 'string') return `"${escapeHtmlStr(v)}"`;
+        if (v === null) return 'null';
+        if (typeof v === 'object') return escapeHtmlStr(JSON.stringify(v));
+        return String(v);
+    }
+
+    function escapeHtmlStr(s) {
+        const d = document.createElement('div');
+        d.textContent = s;
+        return d.innerHTML;
+    }
+
+    // ==================== Color Converter ====================
+    function initColor() {
+        const colorInput = document.getElementById('colorInput');
+        const colorPicker = document.getElementById('colorPicker');
+
+        document.getElementById('colorConvertBtn')?.addEventListener('click', () => {
+            convertColor(colorInput?.value || '');
+        });
+
+        colorPicker?.addEventListener('input', () => {
+            if (colorInput) colorInput.value = colorPicker.value;
+            convertColor(colorPicker.value);
+        });
+
+        colorInput?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') convertColor(colorInput.value);
+        });
+    }
+
+    function convertColor(input) {
+        input = input.trim();
+        const preview = document.getElementById('colorPreview');
+        const hexEl = document.getElementById('colorHex');
+        const rgbEl = document.getElementById('colorRgb');
+        const hslEl = document.getElementById('colorHsl');
+        const picker = document.getElementById('colorPicker');
+        if (!hexEl || !rgbEl || !hslEl) return;
+
+        let r, g, b;
+
+        // Parse HEX
+        let m = input.match(/^#?([0-9a-f]{3,8})$/i);
+        if (m) {
+            let hex = m[1];
+            if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
+            if (hex.length >= 6) {
+                r = parseInt(hex.substring(0,2), 16);
+                g = parseInt(hex.substring(2,4), 16);
+                b = parseInt(hex.substring(4,6), 16);
+            }
+        }
+
+        // Parse rgb(r, g, b)
+        if (r === undefined) {
+            m = input.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
+            if (m) { r = +m[1]; g = +m[2]; b = +m[3]; }
+        }
+
+        // Parse hsl(h, s%, l%)
+        if (r === undefined) {
+            m = input.match(/hsla?\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%/i);
+            if (m) {
+                const rgb = hslToRgb(+m[1], +m[2], +m[3]);
+                r = rgb[0]; g = rgb[1]; b = rgb[2];
+            }
+        }
+
+        if (r === undefined) {
+            hexEl.value = '无法解析';
+            rgbEl.value = '';
+            hslEl.value = '';
+            return;
+        }
+
+        r = Math.max(0, Math.min(255, r));
+        g = Math.max(0, Math.min(255, g));
+        b = Math.max(0, Math.min(255, b));
+
+        const hex = '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
+        const hsl = rgbToHsl(r, g, b);
+
+        hexEl.value = hex.toUpperCase();
+        rgbEl.value = `rgb(${r}, ${g}, ${b})`;
+        hslEl.value = `hsl(${hsl[0]}, ${hsl[1]}%, ${hsl[2]}%)`;
+        if (preview) preview.style.background = hex;
+        if (picker) picker.value = hex;
+    }
+
+    function rgbToHsl(r, g, b) {
+        r /= 255; g /= 255; b /= 255;
+        const max = Math.max(r,g,b), min = Math.min(r,g,b);
+        let h, s, l = (max+min)/2;
+        if (max === min) { h = s = 0; }
+        else {
+            const d = max - min;
+            s = l > 0.5 ? d/(2-max-min) : d/(max+min);
+            switch(max) {
+                case r: h = ((g-b)/d + (g<b?6:0))/6; break;
+                case g: h = ((b-r)/d + 2)/6; break;
+                case b: h = ((r-g)/d + 4)/6; break;
+            }
+        }
+        return [Math.round(h*360), Math.round(s*100), Math.round(l*100)];
+    }
+
+    function hslToRgb(h, s, l) {
+        h /= 360; s /= 100; l /= 100;
+        let r, g, b;
+        if (s === 0) { r = g = b = l; }
+        else {
+            const hue2rgb = (p, q, t) => {
+                if (t < 0) t += 1; if (t > 1) t -= 1;
+                if (t < 1/6) return p + (q-p)*6*t;
+                if (t < 1/2) return q;
+                if (t < 2/3) return p + (q-p)*(2/3-t)*6;
+                return p;
+            };
+            const q = l < 0.5 ? l*(1+s) : l+s-l*s;
+            const p = 2*l - q;
+            r = hue2rgb(p, q, h+1/3);
+            g = hue2rgb(p, q, h);
+            b = hue2rgb(p, q, h-1/3);
+        }
+        return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+    }
+
+    // ==================== Cron Expression Parser ====================
+    function initCron() {
+        document.getElementById('cronParseBtn')?.addEventListener('click', () => {
+            parseCron(document.getElementById('cronInput')?.value || '');
+        });
+
+        document.getElementById('cronInput')?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') parseCron(e.target.value);
+        });
+
+        // Preset buttons
+        document.querySelectorAll('.cron-preset').forEach(btn => {
+            btn.addEventListener('click', () => {
+                const input = document.getElementById('cronInput');
+                if (input) input.value = btn.dataset.cron;
+                parseCron(btn.dataset.cron);
+            });
+        });
+    }
+
+    function parseCron(expr) {
+        const descEl = document.getElementById('cronDesc');
+        const nextEl = document.getElementById('cronNextRuns');
+        if (!descEl || !nextEl) return;
+
+        expr = expr.trim();
+        if (!expr) { descEl.value = ''; nextEl.value = ''; return; }
+
+        // Support both 5-field and 6-field (with seconds) cron
+        const parts = expr.split(/\s+/);
+        let minute, hour, dayOfMonth, month, dayOfWeek;
+
+        if (parts.length === 5) {
+            [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+        } else if (parts.length === 6) {
+            // seconds field ignored for description
+            [, minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+        } else if (parts.length === 7) {
+            [, minute, hour, dayOfMonth, month, dayOfWeek] = parts;
+        } else {
+            descEl.value = '无效的 Cron 表达式 (需要 5~7 个字段)';
+            nextEl.value = '';
+            return;
+        }
+
+        // Build description
+        const desc = describeCron(minute, hour, dayOfMonth, month, dayOfWeek);
+        descEl.value = desc;
+
+        // Calculate next N runs
+        try {
+            const runs = getNextCronRuns(minute, hour, dayOfMonth, month, dayOfWeek, 10);
+            nextEl.value = runs.map((d, i) => `${i+1}.  ${formatDate(d)}`).join('\n');
+        } catch (e) {
+            nextEl.value = '无法计算执行时间: ' + e.message;
+        }
+    }
+
+    function describeCron(min, hour, dom, mon, dow) {
+        const parts = [];
+
+        // Day of week
+        const dowMap = { '0':'日','1':'一','2':'二','3':'三','4':'四','5':'五','6':'六','7':'日' };
+        if (dow !== '*' && dow !== '?') {
+            const range = dow.replace(/\d/g, d => dowMap[d] || d);
+            parts.push(`周${range}`);
+        }
+
+        // Month
+        if (mon !== '*' && mon !== '?') parts.push(`${mon}月`);
+
+        // Day of month
+        if (dom !== '*' && dom !== '?') parts.push(`${dom}号`);
+
+        // Hour
+        if (hour === '*') {
+            parts.push('每小时');
+        } else if (hour.includes('/')) {
+            parts.push(`每${hour.split('/')[1]}小时`);
+        } else if (hour !== '?') {
+            parts.push(`${hour}时`);
+        }
+
+        // Minute
+        if (min === '*') {
+            parts.push('每分钟');
+        } else if (min.includes('/')) {
+            parts.push(`每${min.split('/')[1]}分钟`);
+        } else if (min !== '?') {
+            parts.push(`${min}分`);
+        }
+
+        return parts.length ? '执行时间: ' + parts.join(' ') : '每分钟执行';
+    }
+
+    function getNextCronRuns(min, hour, dom, mon, dow, count) {
+        const runs = [];
+        const now = new Date();
+        let cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes() + 1, 0, 0);
+
+        const maxIter = 525960; // ~1 year of minutes
+        let iter = 0;
+
+        while (runs.length < count && iter < maxIter) {
+            iter++;
+            if (matchesCronField(cursor.getMonth() + 1, mon) &&
+                matchesCronField(cursor.getDate(), dom) &&
+                matchesCronDow(cursor.getDay(), dow) &&
+                matchesCronField(cursor.getHours(), hour) &&
+                matchesCronField(cursor.getMinutes(), min)) {
+                runs.push(new Date(cursor));
+            }
+            cursor = new Date(cursor.getTime() + 60000);
+        }
+        return runs;
+    }
+
+    function matchesCronField(value, field) {
+        if (field === '*' || field === '?') return true;
+        // Handle step: */5 or 0/5
+        if (field.includes('/')) {
+            const [start, step] = field.split('/').map(Number);
+            const base = isNaN(start) ? 0 : start;
+            return (value - base) >= 0 && (value - base) % step === 0;
+        }
+        // Handle range: 1-5
+        if (field.includes('-') && !field.includes(',')) {
+            const [lo, hi] = field.split('-').map(Number);
+            return value >= lo && value <= hi;
+        }
+        // Handle list: 1,3,5
+        if (field.includes(',')) {
+            return field.split(',').some(v => matchesCronField(value, v.trim()));
+        }
+        return value === Number(field);
+    }
+
+    function matchesCronDow(value, field) {
+        if (field === '*' || field === '?') return true;
+        // Normalize: 7 → 0 (Sunday), word boundary to avoid replacing 17→10
+        const norm = f => f.replace(/\b7\b/g, '0');
+        return matchesCronField(value, norm(field));
+    }
+
+    // ==================== Code Diff (IDE-style side-by-side) ====================
+    let diffHunks = [];   // each hunk = first line index (0-based) of a group of consecutive changed lines in A
+    let diffHunkIdx = -1; // current navigation position
+
+    function initCodeDiff() {
+        const aEl = document.getElementById('codeDiffA');
+        const bEl = document.getElementById('codeDiffB');
+
+        // Auto-diff on input
+        const debouncedDiff = debounce(runCodeDiff, 300);
+        aEl?.addEventListener('input', debouncedDiff);
+        bEl?.addEventListener('input', debouncedDiff);
+
+        // Scroll sync: textarea -> its own gutter & backdrop
+        setupPaneScroll('codeDiffA', 'codeDiffGutterA', 'codeDiffBackdropA');
+        setupPaneScroll('codeDiffB', 'codeDiffGutterB', 'codeDiffBackdropB');
+
+        document.getElementById('codeDiffSwapBtn')?.addEventListener('click', () => {
+            if (aEl && bEl) {
+                const tmp = aEl.value;
+                aEl.value = bEl.value;
+                bEl.value = tmp;
+                runCodeDiff();
+            }
+        });
+
+        // Options also re-trigger diff
+        document.getElementById('codeDiffIgnoreWhitespace')?.addEventListener('change', runCodeDiff);
+        document.getElementById('codeDiffIgnoreCase')?.addEventListener('change', runCodeDiff);
+
+        document.getElementById('codeDiffClearBtn')?.addEventListener('click', () => {
+            if (aEl) aEl.value = '';
+            if (bEl) bEl.value = '';
+            clearDiffOverlays();
+        });
+
+        // Diff navigation
+        document.getElementById('codeDiffPrevBtn')?.addEventListener('click', () => navigateDiff(-1));
+        document.getElementById('codeDiffNextBtn')?.addEventListener('click', () => navigateDiff(1));
+
+        // Fullscreen toggle
+        const fsBtn = document.getElementById('codeDiffFullscreenBtn');
+        const panel = document.getElementById('toolPanelCodeDiff');
+        if (fsBtn && panel) {
+            fsBtn.addEventListener('click', () => {
+                if (document.fullscreenElement) {
+                    document.exitFullscreen();
+                } else {
+                    panel.requestFullscreen();
+                }
+            });
+            document.addEventListener('fullscreenchange', () => {
+                const isFs = document.fullscreenElement === panel;
+                fsBtn.querySelector('.cdiff-icon-expand').style.display = isFs ? 'none' : '';
+                fsBtn.querySelector('.cdiff-icon-collapse').style.display = isFs ? '' : 'none';
+            });
+        }
+    }
+
+    function navigateDiff(direction) {
+        if (diffHunks.length === 0) return;
+        diffHunkIdx += direction;
+        if (diffHunkIdx < 0) diffHunkIdx = diffHunks.length - 1;
+        if (diffHunkIdx >= diffHunks.length) diffHunkIdx = 0;
+        updateNavPos();
+
+        const hunk = diffHunks[diffHunkIdx];
+        const lineHeight = 20;
+        const textarea = document.getElementById(hunk.side === 'a' ? 'codeDiffA' : 'codeDiffB');
+        if (!textarea) return;
+
+        const targetScroll = hunk.line * lineHeight - textarea.clientHeight / 3;
+        textarea.scrollTop = Math.max(0, targetScroll);
+        // Sync the other side to the same position
+        const otherTextarea = document.getElementById(hunk.side === 'a' ? 'codeDiffB' : 'codeDiffA');
+        if (otherTextarea) otherTextarea.scrollTop = textarea.scrollTop;
+        // Trigger scroll event to sync gutter/backdrop
+        textarea.dispatchEvent(new Event('scroll'));
+        otherTextarea?.dispatchEvent(new Event('scroll'));
+    }
+
+    function updateNavPos() {
+        const posEl = document.getElementById('codeDiffNavPos');
+        if (posEl) {
+            posEl.textContent = diffHunks.length > 0 ? `${diffHunkIdx + 1}/${diffHunks.length}` : '';
+        }
+    }
+
+    function setupPaneScroll(textareaId, gutterId, backdropId) {
+        const textarea = document.getElementById(textareaId);
+        const gutter = document.getElementById(gutterId);
+        const backdrop = document.getElementById(backdropId);
+        if (!textarea) return;
+        textarea.addEventListener('scroll', () => {
+            if (gutter) gutter.scrollTop = textarea.scrollTop;
+            if (backdrop) backdrop.scrollTop = textarea.scrollTop;
+        });
+    }
+
+    function clearDiffOverlays() {
+        const ids = ['codeDiffGutterA', 'codeDiffGutterB', 'codeDiffBackdropA', 'codeDiffBackdropB'];
+        ids.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+        const statsEl = document.getElementById('codeDiffStats');
+        if (statsEl) statsEl.textContent = '';
+        diffHunks = [];
+        diffHunkIdx = -1;
+        updateNavPos();
+    }
+
+    function runCodeDiff() {
+        const aStr = document.getElementById('codeDiffA')?.value || '';
+        const bStr = document.getElementById('codeDiffB')?.value || '';
+
+        if (!aStr && !bStr) {
+            clearDiffOverlays();
+            return;
+        }
+
+        const ignoreWs = document.getElementById('codeDiffIgnoreWhitespace')?.checked || false;
+        const ignoreCase = document.getElementById('codeDiffIgnoreCase')?.checked || false;
+
+        const linesA = aStr.split('\n');
+        const linesB = bStr.split('\n');
+
+        const normalize = (line) => {
+            let s = line;
+            if (ignoreWs) s = s.replace(/\s+/g, ' ').trim();
+            if (ignoreCase) s = s.toLowerCase();
+            return s;
+        };
+
+        const rawDiff = computeLCSDiff(linesA, linesB, normalize);
+        const rows = buildSideBySideRows(rawDiff);
+
+        // Per-line status
+        const statusA = new Array(linesA.length).fill('equal');
+        const statusB = new Array(linesB.length).fill('equal');
+        let added = 0, removed = 0, modified = 0, unchanged = 0;
+
+        for (const row of rows) {
+            if (row.type === 'equal') {
+                unchanged++;
+            } else if (row.type === 'remove') {
+                removed++;
+                if (row.lineA != null) statusA[row.lineA - 1] = 'del';
+            } else if (row.type === 'add') {
+                added++;
+                if (row.lineB != null) statusB[row.lineB - 1] = 'add';
+            } else if (row.type === 'modify') {
+                modified++;
+                if (row.lineA != null) statusA[row.lineA - 1] = 'del';
+                if (row.lineB != null) statusB[row.lineB - 1] = 'add';
+            }
+        }
+
+        renderOverlay('codeDiffGutterA', 'codeDiffBackdropA', linesA, statusA);
+        renderOverlay('codeDiffGutterB', 'codeDiffBackdropB', linesB, statusB);
+
+        // Build hunks for navigation (groups of consecutive changed lines)
+        diffHunks = [];
+        buildHunks(statusA, 'a');
+        buildHunks(statusB, 'b');
+        diffHunks.sort((a, b) => a.line - b.line || (a.side === 'a' ? -1 : 1));
+        diffHunkIdx = -1;
+        updateNavPos();
+
+        const statsEl = document.getElementById('codeDiffStats');
+        if (statsEl) {
+            statsEl.innerHTML =
+                `<span class="cdiff-stat-eq">${unchanged} 不变</span>` +
+                `<span class="cdiff-stat-mod">~${modified} 修改</span>` +
+                `<span class="cdiff-stat-add">+${added} 新增</span>` +
+                `<span class="cdiff-stat-rm">-${removed} 删除</span>`;
+        }
+    }
+
+    function renderOverlay(gutterId, backdropId, lines, status) {
+        const gutter = document.getElementById(gutterId);
+        const backdrop = document.getElementById(backdropId);
+        if (!gutter || !backdrop) return;
+
+        const gutterHtml = [];
+        const backdropHtml = [];
+        for (let i = 0; i < lines.length; i++) {
+            const s = status[i];
+            const cls = s !== 'equal' ? ' ' + s : '';
+            gutterHtml.push(`<div class="cdiff-gutter-line${cls}">${i + 1}</div>`);
+            backdropHtml.push(`<div class="cdiff-backdrop-line${cls}"></div>`);
+        }
+        gutter.innerHTML = gutterHtml.join('');
+        backdrop.innerHTML = backdropHtml.join('');
+    }
+
+    function buildHunks(status, side) {
+        let inHunk = false;
+        for (let i = 0; i < status.length; i++) {
+            if (status[i] !== 'equal') {
+                if (!inHunk) {
+                    diffHunks.push({ line: i, side: side });
+                    inHunk = true;
+                }
+            } else {
+                inHunk = false;
+            }
+        }
+    }
+
+    /**
+     * Group raw LCS diff entries into side-by-side rows.
+     * Pairs consecutive remove+add sequences into 'modify' rows with char-level diff.
+     */
+    function buildSideBySideRows(diff) {
+        const rows = [];
+        let i = 0;
+        while (i < diff.length) {
+            if (diff[i].type === 'equal') {
+                rows.push({ type: 'equal', lineA: diff[i].lineA, lineB: diff[i].lineB });
+                i++;
+            } else {
+                const removes = [];
+                const adds = [];
+                while (i < diff.length && diff[i].type === 'remove') { removes.push(diff[i]); i++; }
+                while (i < diff.length && diff[i].type === 'add') { adds.push(diff[i]); i++; }
+
+                const pairs = Math.min(removes.length, adds.length);
+                for (let p = 0; p < pairs; p++) {
+                    rows.push({ type: 'modify', lineA: removes[p].lineA, lineB: adds[p].lineB });
+                }
+                for (let p = pairs; p < removes.length; p++) {
+                    rows.push({ type: 'remove', lineA: removes[p].lineA });
+                }
+                for (let p = pairs; p < adds.length; p++) {
+                    rows.push({ type: 'add', lineB: adds[p].lineB });
+                }
+            }
+        }
+        return rows;
+    }
+
+    /**
+     * LCS-based line diff
+     */
+    function computeLCSDiff(linesA, linesB, normalize) {
+        const m = linesA.length;
+        const n = linesB.length;
+
+        const dp = Array.from({ length: m + 1 }, () => new Uint32Array(n + 1));
+        for (let i = 1; i <= m; i++) {
+            for (let j = 1; j <= n; j++) {
+                if (normalize(linesA[i - 1]) === normalize(linesB[j - 1])) {
+                    dp[i][j] = dp[i - 1][j - 1] + 1;
+                } else {
+                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                }
+            }
+        }
+
+        const result = [];
+        let i = m, j = n;
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0 && normalize(linesA[i - 1]) === normalize(linesB[j - 1])) {
+                result.push({ type: 'equal', line: linesA[i - 1], lineA: i, lineB: j });
+                i--; j--;
+            } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+                result.push({ type: 'add', line: linesB[j - 1], lineA: null, lineB: j });
+                j--;
+            } else {
+                result.push({ type: 'remove', line: linesA[i - 1], lineA: i, lineB: null });
+                i--;
+            }
+        }
+
+        return result.reverse();
+    }
+
+    DevKit.ToolboxController = { init, switchTool };
+})();

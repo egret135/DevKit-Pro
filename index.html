@@ -105,6 +105,16 @@
                                     stroke="currentColor" stroke-width="2" stroke-linecap="round" />
                             </svg>
                         </button>
+                        <button id="appFullscreenBtn" class="btn-icon" title="全屏">
+                            <svg class="fs-icon-expand" width="18" height="18" viewBox="0 0 24 24" fill="none">
+                                <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                            <svg class="fs-icon-collapse" width="18" height="18" viewBox="0 0 24 24" fill="none" style="display:none">
+                                <path d="M5 9h4V5M19 9h-4V5M5 15h4v4M19 15h-4v4"
+                                    stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                            </svg>
+                        </button>
                     </div>
                 </div>
             </div>
@@ -342,6 +352,26 @@
                         <span class="tool-icon">🔑</span>
                         <span>密码生成</span>
                     </button>
+                    <button class="toolbox-tab" data-tool="regex">
+                        <span class="tool-icon">🔍</span>
+                        <span>正则测试</span>
+                    </button>
+                    <button class="toolbox-tab" data-tool="jsonDiff">
+                        <span class="tool-icon">📊</span>
+                        <span>JSON Diff</span>
+                    </button>
+                    <button class="toolbox-tab" data-tool="color">
+                        <span class="tool-icon">🎨</span>
+                        <span>颜色转换</span>
+                    </button>
+                    <button class="toolbox-tab" data-tool="cron">
+                        <span class="tool-icon">📅</span>
+                        <span>Cron解析</span>
+                    </button>
+                    <button class="toolbox-tab" data-tool="codeDiff">
+                        <span class="tool-icon">📝</span>
+                        <span>代码对比</span>
+                    </button>
                 </div>
 
                 <!-- Tool Panel (Bottom) -->
@@ -534,6 +564,169 @@
                             </div>
                         </div>
                     </div>
+
+                    <!-- Regex Tester Panel -->
+                    <div id="toolPanelRegex" class="tool-panel tech-panel">
+                        <div class="tool-row">
+                            <span class="tool-label">正则表达式</span>
+                            <input type="text" id="regexPattern" class="tool-input" placeholder="输入正则表达式，如: \d+">
+                            <input type="text" id="regexFlags" class="tool-input small" value="g" placeholder="标志">
+                        </div>
+                        <div class="tool-row">
+                            <textarea id="regexTestStr" class="tool-textarea" placeholder="输入要测试的文本"></textarea>
+                        </div>
+                        <div class="tool-row">
+                            <button id="regexTestBtn" class="tool-btn-action tech-btn primary">测试匹配</button>
+                            <button id="regexReplaceBtn" class="tool-btn-action tech-btn primary">替换</button>
+                            <input type="text" id="regexReplaceStr" class="tool-input" placeholder="替换为...">
+                        </div>
+                        <div class="tool-row">
+                            <input type="text" id="regexMatchCount" class="tool-input result small" readonly placeholder="匹配数">
+                        </div>
+                        <div class="tool-row">
+                            <textarea id="regexResult" class="tool-textarea" readonly placeholder="匹配结果将显示在这里"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- JSON Diff Panel -->
+                    <div id="toolPanelJsonDiff" class="tool-panel tech-panel">
+                        <div class="tool-row json-diff-inputs">
+                            <div class="json-diff-col">
+                                <span class="tool-label">JSON A (基准)</span>
+                                <textarea id="jsonDiffA" class="tool-textarea" placeholder='{"key": "value"}'></textarea>
+                            </div>
+                            <div class="json-diff-col">
+                                <span class="tool-label">JSON B (对比)</span>
+                                <textarea id="jsonDiffB" class="tool-textarea" placeholder='{"key": "newValue"}'></textarea>
+                            </div>
+                        </div>
+                        <div class="tool-row">
+                            <button id="jsonDiffBtn" class="tool-btn-action tech-btn primary">对比差异</button>
+                            <button id="jsonDiffSwapBtn" class="tool-btn-action tech-btn">交换 A ↔ B</button>
+                        </div>
+                        <div class="tool-row">
+                            <div id="jsonDiffResult" class="json-diff-output" style="width:100%;">差异结果将显示在这里</div>
+                        </div>
+                    </div>
+
+                    <!-- Color Converter Panel -->
+                    <div id="toolPanelColor" class="tool-panel tech-panel">
+                        <div class="tool-row">
+                            <span class="tool-label">颜色输入</span>
+                            <input type="text" id="colorInput" class="tool-input" placeholder="#3B82F6 或 rgb(59,130,246) 或 hsl(217,91%,60%)">
+                            <input type="color" id="colorPicker" class="tool-color-picker" value="#3B82F6">
+                            <button id="colorConvertBtn" class="tool-btn-action tech-btn primary">转换</button>
+                        </div>
+                        <div class="tool-row">
+                            <div id="colorPreview" class="color-preview-box" style="background:#3B82F6;"></div>
+                        </div>
+                        <div class="tool-row">
+                            <span class="tool-label" style="min-width:40px;">HEX</span>
+                            <input type="text" id="colorHex" class="tool-input result" readonly placeholder="HEX">
+                        </div>
+                        <div class="tool-row">
+                            <span class="tool-label" style="min-width:40px;">RGB</span>
+                            <input type="text" id="colorRgb" class="tool-input result" readonly placeholder="RGB">
+                        </div>
+                        <div class="tool-row">
+                            <span class="tool-label" style="min-width:40px;">HSL</span>
+                            <input type="text" id="colorHsl" class="tool-input result" readonly placeholder="HSL">
+                        </div>
+                    </div>
+
+                    <!-- Cron Expression Parser Panel -->
+                    <div id="toolPanelCron" class="tool-panel tech-panel">
+                        <div class="tool-row">
+                            <span class="tool-label">Cron 表达式</span>
+                            <input type="text" id="cronInput" class="tool-input" placeholder="* * * * * 或 0 0/5 * * * ?">
+                            <button id="cronParseBtn" class="tool-btn-action tech-btn primary">解析</button>
+                        </div>
+                        <div class="tool-row">
+                            <span class="tool-label">常用示例</span>
+                            <button class="tool-btn-action tech-btn cron-preset" data-cron="* * * * *">每分钟</button>
+                            <button class="tool-btn-action tech-btn cron-preset" data-cron="0 * * * *">每小时</button>
+                            <button class="tool-btn-action tech-btn cron-preset" data-cron="0 0 * * *">每天零点</button>
+                            <button class="tool-btn-action tech-btn cron-preset" data-cron="0 9 * * 1-5">工作日9点</button>
+                            <button class="tool-btn-action tech-btn cron-preset" data-cron="0 0 1 * *">每月1号</button>
+                            <button class="tool-btn-action tech-btn cron-preset" data-cron="0/30 * * * *">每30分钟</button>
+                        </div>
+                        <div class="tool-row">
+                            <input type="text" id="cronDesc" class="tool-input result" readonly placeholder="表达式含义">
+                        </div>
+                        <div class="tool-row">
+                            <textarea id="cronNextRuns" class="tool-textarea" readonly placeholder="接下来的执行时间将显示在这里"></textarea>
+                        </div>
+                    </div>
+
+                    <!-- Code Diff Panel -->
+                    <div id="toolPanelCodeDiff" class="tool-panel tech-panel code-diff-panel">
+                        <!-- Toolbar -->
+                        <div class="cdiff-toolbar">
+                            <div class="cdiff-toolbar-left">
+                                <label class="code-diff-option">
+                                    <input type="checkbox" id="codeDiffIgnoreWhitespace">
+                                    <span>忽略空白</span>
+                                </label>
+                                <label class="code-diff-option">
+                                    <input type="checkbox" id="codeDiffIgnoreCase">
+                                    <span>忽略大小写</span>
+                                </label>
+                                <span id="codeDiffStats" class="code-diff-stats"></span>
+                                <span class="cdiff-nav">
+                                    <button id="codeDiffPrevBtn" class="cdiff-nav-btn" title="上一个差异 (↑)">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                            <path d="M18 15l-6-6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                    <span id="codeDiffNavPos" class="cdiff-nav-pos"></span>
+                                    <button id="codeDiffNextBtn" class="cdiff-nav-btn" title="下一个差异 (↓)">
+                                        <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                            <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                        </svg>
+                                    </button>
+                                </span>
+                            </div>
+                            <div class="cdiff-toolbar-right">
+                                <button id="codeDiffSwapBtn" class="tool-btn-action tech-btn">交换 A ↔ B</button>
+                                <button id="codeDiffClearBtn" class="tool-btn-action tech-btn">清空</button>
+                                <button id="codeDiffFullscreenBtn" class="tool-btn-action tech-btn" title="全屏 (Esc 退出)">
+                                    <svg class="cdiff-icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                        <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    <svg class="cdiff-icon-collapse" width="14" height="14" viewBox="0 0 24 24" fill="none" style="display:none">
+                                        <path d="M5 9h4V5M19 9h-4V5M5 15h4v4M19 15h-4v4"
+                                            stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                    全屏
+                                </button>
+                            </div>
+                        </div>
+                        <!-- Editable Diff -->
+                        <div class="cdiff-editor-container">
+                            <div class="cdiff-pane-edit">
+                                <div class="cdiff-input-header">原始代码</div>
+                                <div class="cdiff-edit-area">
+                                    <div class="cdiff-gutter" id="codeDiffGutterA"></div>
+                                    <div class="cdiff-editor-wrap">
+                                        <div class="cdiff-backdrop" id="codeDiffBackdropA"></div>
+                                        <textarea id="codeDiffA" class="cdiff-textarea" placeholder="粘贴原始代码..." spellcheck="false"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="cdiff-divider"></div>
+                            <div class="cdiff-pane-edit">
+                                <div class="cdiff-input-header">修改后代码</div>
+                                <div class="cdiff-edit-area">
+                                    <div class="cdiff-gutter" id="codeDiffGutterB"></div>
+                                    <div class="cdiff-editor-wrap">
+                                        <div class="cdiff-backdrop" id="codeDiffBackdropB"></div>
+                                        <textarea id="codeDiffB" class="cdiff-textarea" placeholder="粘贴修改后的代码..." spellcheck="false"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
                 </div>
             </div>
         </main>
@@ -676,7 +869,6 @@
     <script src="lib/codemirror/mode/toml/toml.js"></script>
 
     <!-- Scripts -->
-    <script src="utils/history-manager.js"></script>
     <script src="utils/editor-manager.js"></script>
     <script src="parsers/detector.js"></script>
     <script src="parsers/mysql-parser.js"></script>
@@ -704,6 +896,13 @@
     <script src="utils/code-block-enhancer.js"></script>
     <script src="tools/toolbox.js"></script>
     <script src="config/settings.js"></script>
+
+    <!-- Controllers -->
+    <script src="controllers/converter-controller.js"></script>
+    <script src="controllers/diff-controller.js"></script>
+    <script src="controllers/markdown-controller.js"></script>
+
+    <!-- App Orchestrator (must be last) -->
     <script src="app.js"></script>
 </body>
 

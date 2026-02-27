@@ -82,6 +82,11 @@ body {
     height: 100vh;
 }
 
+.app.file-dragging {
+    outline: 3px dashed var(--color-accent);
+    outline-offset: -3px;
+}
+
 /* ==================== Header ==================== */
 .header {
     background: var(--color-bg);
@@ -959,10 +964,11 @@ body {
     display: flex;
     flex-direction: column;
     align-items: center;
+    overflow-x: auto;
 }
 
 .markdown-preview .mermaid-container svg {
-    max-width: 100%;
+    max-width: none;
     height: auto;
 }
 
@@ -2428,4 +2434,294 @@ body {
     display: block;
     max-width: none;
     max-height: none;
+}
+
+/* ==================== New Toolbox Panels ==================== */
+
+/* JSON Diff */
+.json-diff-inputs {
+    display: flex;
+    gap: var(--space-4);
+    align-items: stretch;
+}
+
+.json-diff-col {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.json-diff-col .tool-textarea {
+    flex: 1;
+    min-height: 160px;
+}
+
+.json-diff-output {
+    font-family: var(--font-mono);
+    font-size: 13px;
+    background: #f8fafc;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: var(--space-4);
+    min-height: 120px;
+    max-height: 400px;
+    overflow-y: auto;
+    white-space: pre-wrap;
+    word-break: break-all;
+    line-height: 1.6;
+    color: var(--color-text-primary);
+}
+
+.diff-line { padding: 1px 4px; border-radius: 2px; }
+.diff-added { background: #dcfce7; color: #166534; }
+.diff-removed { background: #fee2e2; color: #991b1b; }
+.diff-unchanged { color: var(--color-text-tertiary); }
+.diff-key { font-weight: 600; }
+
+/* Color Converter */
+.tool-color-picker {
+    width: 40px;
+    height: 36px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 2px;
+    cursor: pointer;
+    background: var(--color-bg);
+}
+
+.color-preview-box {
+    width: 100%;
+    height: 48px;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    transition: background 0.2s;
+}
+
+/* Cron Presets */
+.cron-preset {
+    font-size: 12px !important;
+    padding: 4px 10px !important;
+}
+
+/* Code Diff - IDE-style side-by-side */
+.code-diff-panel.active {
+    display: flex;
+    flex-direction: column;
+    gap: 0;
+    padding: var(--space-4) !important;
+    max-width: 100%;
+}
+
+.cdiff-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    padding-bottom: var(--space-3);
+    border-bottom: 1px solid var(--color-border);
+    margin-bottom: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.cdiff-toolbar-left,
+.cdiff-toolbar-right {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.code-diff-option {
+    display: flex;
+    align-items: center;
+    gap: var(--space-1);
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    white-space: nowrap;
+}
+
+.code-diff-option input[type="checkbox"] {
+    accent-color: var(--color-accent);
+}
+
+.code-diff-stats {
+    display: flex;
+    gap: var(--space-3);
+    font-size: 12px;
+    margin-left: var(--space-3);
+}
+
+.cdiff-stat-add { color: #166534; font-weight: 600; }
+.cdiff-stat-rm { color: #991b1b; font-weight: 600; }
+.cdiff-stat-mod { color: #92400e; font-weight: 600; }
+.cdiff-stat-eq { color: var(--color-text-tertiary); }
+
+/* Diff navigation */
+.cdiff-nav {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    margin-left: var(--space-2);
+}
+
+.cdiff-nav-btn {
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    background: var(--color-bg);
+    color: var(--color-text-secondary);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.cdiff-nav-btn:hover {
+    background: var(--color-bg-elevated);
+    border-color: var(--color-border-strong);
+    color: var(--color-text-primary);
+}
+
+.cdiff-nav-pos {
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    min-width: 32px;
+    text-align: center;
+}
+
+/* Editable diff editor */
+.cdiff-editor-container {
+    display: flex;
+    flex: 1;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    overflow: hidden;
+    min-height: 500px;
+}
+
+.cdiff-pane-edit {
+    flex: 1;
+    display: flex;
+    flex-direction: column;
+    min-width: 0;
+}
+
+.cdiff-input-header {
+    font-size: 11px;
+    font-weight: 600;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    color: var(--color-text-tertiary);
+    padding: var(--space-2) var(--space-3);
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+    user-select: none;
+}
+
+.cdiff-edit-area {
+    flex: 1;
+    display: flex;
+    overflow: hidden;
+}
+
+.cdiff-gutter {
+    width: 48px;
+    flex-shrink: 0;
+    overflow: hidden;
+    background: rgba(0, 0, 0, 0.02);
+    border-right: 1px solid var(--color-border);
+    user-select: none;
+}
+
+.cdiff-gutter-line {
+    height: 20px;
+    line-height: 20px;
+    text-align: right;
+    padding-right: 8px;
+    font-family: var(--font-mono);
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+}
+
+.cdiff-gutter-line.del {
+    background: #ffe4e6;
+    color: #be123c;
+}
+
+.cdiff-gutter-line.add {
+    background: #dcfce7;
+    color: #15803d;
+}
+
+.cdiff-editor-wrap {
+    flex: 1;
+    position: relative;
+    overflow: hidden;
+}
+
+.cdiff-backdrop {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    pointer-events: none;
+    overflow: hidden;
+}
+
+.cdiff-backdrop-line {
+    height: 20px;
+    width: 100%;
+}
+
+.cdiff-backdrop-line.del {
+    background: #fff1f2;
+}
+
+.cdiff-backdrop-line.add {
+    background: #f0fdf4;
+}
+
+.cdiff-textarea {
+    position: relative;
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    border: none;
+    outline: none;
+    resize: none;
+    padding: 0 12px;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    line-height: 20px;
+    tab-size: 4;
+    white-space: pre;
+    overflow: auto;
+    background: transparent;
+    color: var(--color-text-primary);
+    z-index: 1;
+}
+
+.cdiff-textarea::placeholder {
+    color: var(--color-text-tertiary);
+}
+
+.cdiff-divider {
+    width: 1px;
+    background: var(--color-border-strong);
+    flex-shrink: 0;
+}
+
+/* Code Diff Fullscreen */
+.code-diff-panel:fullscreen {
+    background: var(--color-bg);
+    padding: var(--space-6) !important;
+    overflow-y: auto;
+}
+
+.code-diff-panel:fullscreen .cdiff-editor-container {
+    min-height: 0;
+    flex: 1;
 }
