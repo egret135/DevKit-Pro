@@ -904,9 +904,15 @@ body {
 }
 
 /* Tables - Typora Style */
+.markdown-preview .table-wrapper {
+    width: 100%;
+    overflow-x: auto;
+    margin: 1.2rem 0;
+    -webkit-overflow-scrolling: touch;
+}
+
 .markdown-preview table {
     width: 100%;
-    margin: 1.2rem 0;
     border-collapse: collapse;
     font-size: 0.95rem;
 }
@@ -916,6 +922,13 @@ body {
     padding: 0.6rem 1rem;
     border: 1px solid #DDDDDD;
     text-align: left;
+    white-space: nowrap;
+}
+
+.markdown-preview td {
+    white-space: normal;
+    word-break: break-word;
+    min-width: 80px;
 }
 
 .markdown-preview th {

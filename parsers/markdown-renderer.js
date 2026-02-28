@@ -36,9 +36,10 @@ const MarkdownRenderer = {
                 theme: 'default',
                 securityLevel: 'loose',
                 flowchart: {
-                    useMaxWidth: true,
+                    useMaxWidth: false,
                     htmlLabels: true,
-                    curve: 'basis'
+                    curve: 'basis',
+                    wrappingWidth: 200
                 }
             });
         }
@@ -209,7 +210,11 @@ const MarkdownRenderer = {
             }
         }
 
-        // Step 6: Enhance code blocks with toolbar (format + copy buttons)
+        // Step 6: Wrap tables in scrollable container
+        html = html.replace(/<table>/g, '<div class="table-wrapper"><table>');
+        html = html.replace(/<\/table>/g, '</table></div>');
+
+        // Step 7: Enhance code blocks with toolbar (format + copy buttons)
         if (typeof CodeBlockEnhancer !== 'undefined') {
             html = CodeBlockEnhancer.processCodeBlocks(html);
         }
