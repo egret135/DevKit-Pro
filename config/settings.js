@@ -11,7 +11,8 @@ const Settings = {
         editorTheme: 'dracula',
         editorFont: "'JetBrains Mono', monospace",
         autoFormat: 'always',  // 'always', 'paste', 'never'
-        formatIndent: 4        // 2, 4, or 'tab'
+        formatIndent: 4,       // 2, 4, or 'tab'
+        lastMode: 'converter'  // 'converter', 'diff', 'markdown', 'toolbox'
     },
 
     // Load settings from chrome.storage
