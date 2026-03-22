@@ -44,6 +44,10 @@ const Settings = {
                         onError();
                         return;
                     }
+                    if (result == null) {
+                        onError();
+                        return;
+                    }
                     const settings = (result && result.settings) || this.defaults;
                     resolve({ ...this.defaults, ...settings });
                 });
@@ -75,7 +79,11 @@ const Settings = {
             const storage = this.getStorageArea();
 
             const saveToLocalStorage = () => {
-                localStorage.setItem('settings', JSON.stringify(settings));
+                try {
+                    localStorage.setItem('settings', JSON.stringify(settings));
+                } catch (_) {
+                    // Ignore localStorage write failures and keep app flow running.
+                }
                 resolve();
             };
 
