@@ -13,6 +13,7 @@
         rel="stylesheet">
     <!-- CodeMirror & Theme -->
     <link rel="stylesheet" href="lib/codemirror/lib/codemirror.css">
+    <link rel="stylesheet" href="lib/codemirror/addon/fold/foldgutter.css">
     <link rel="stylesheet" href="lib/codemirror/theme/dracula.css">
     <link rel="stylesheet" href="lib/codemirror/theme/material.css">
     <link rel="stylesheet" href="lib/codemirror/theme/monokai.css">
@@ -74,6 +75,7 @@
                         <button id="modeConverter" class="mode-btn active">转换器</button>
                         <button id="modeDiff" class="mode-btn">DDL 对比</button>
                         <button id="modeMarkdown" class="mode-btn">Markdown</button>
+                        <button id="modeJson" class="mode-btn">JSON 工具</button>
                         <button id="modeToolbox" class="mode-btn">工具箱</button>
                     </div>
                     <div class="separator"></div>
@@ -315,6 +317,169 @@
                     <div class="panel-body markdown-preview-container">
                         <div id="markdownPreview" class="markdown-preview">
                             <p class="placeholder">输入 Markdown 文本开始预览...</p>
+                        </div>
+                    </div>
+                </div>
+            </div>
+
+            <!-- JSON Workspace (Hidden by default) -->
+            <div id="jsonWorkspace" class="workspace json-workspace hidden">
+                <div class="json-sub-nav">
+                    <button id="jsonSubFormat" class="json-sub-tab active">格式化</button>
+                    <button id="jsonSubCompare" class="json-sub-tab">对比</button>
+                </div>
+
+                <!-- Format View -->
+                <div id="jsonFormatView" class="json-sub-view">
+                    <div class="json-format-toolbar">
+                        <div class="json-toolbar-left">
+                            <button id="jsonFormatBtn" class="tool-btn-action tech-btn primary">格式化</button>
+                            <button id="jsonMinifyBtn" class="tool-btn-action tech-btn">压缩</button>
+                            <button id="jsonSortKeysBtn" class="tool-btn-action tech-btn">排序 Key</button>
+                            <button id="jsonCopyBtn" class="tool-btn-action tech-btn">复制</button>
+                            <button id="jsonClearBtn" class="tool-btn-action tech-btn">清空</button>
+                            <label class="code-diff-option json-auto-format-option">
+                                <input type="checkbox" id="jsonAutoFormat" checked>
+                                <span>自动格式化</span>
+                            </label>
+                        </div>
+                        <div class="json-toolbar-right">
+                            <span class="json-indent-hint">缩进跟随全局设置</span>
+                            <span id="jsonFormatMeta" class="json-format-meta">0 行</span>
+                        </div>
+                    </div>
+                    <div class="json-format-panels">
+                        <div class="panel json-format-panel">
+                            <div class="panel-header">
+                                <div class="panel-title">输入</div>
+                            </div>
+                            <div class="panel-body">
+                                <textarea id="jsonFormatInput" class="editor" placeholder='粘贴 JSON 文本，例如：&#10;{"name":"DevKit","version":1}'
+                                    spellcheck="false"></textarea>
+                            </div>
+                        </div>
+                        <div class="panel json-format-panel">
+                            <div class="panel-header">
+                                <div class="panel-title">格式化结果</div>
+                                <span id="jsonFormatCopyToast" class="json-format-copy-toast" aria-live="polite"></span>
+                                <div class="panel-actions">
+                                    <button id="jsonFoldAllBtn" class="btn-ghost" title="折叠全部 Object / Array">全部折叠</button>
+                                    <button id="jsonUnfoldAllBtn" class="btn-ghost" title="展开全部">全部展开</button>
+                                </div>
+                            </div>
+                            <div class="panel-body json-format-output-body">
+                                <div id="jsonFormatErrorView" class="json-format-error-view hidden" aria-live="polite"></div>
+                                <div id="jsonFormatOutputWrap" class="json-format-output-wrap">
+                                    <textarea id="jsonFormatOutput" class="editor output" placeholder="格式化结果将显示在这里"
+                                        spellcheck="false" readonly></textarea>
+                                </div>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+
+                <!-- Compare View -->
+                <div id="jsonCompareView" class="json-sub-view hidden">
+                    <div class="json-compare-toolbar cdiff-toolbar">
+                        <div class="cdiff-toolbar-left">
+                            <div class="json-compare-mode-switch">
+                                <button id="jsonCompareModeStructural" class="json-mode-btn active">结构化</button>
+                                <button id="jsonCompareModeSideBySide" class="json-mode-btn">并排</button>
+                            </div>
+                            <label class="code-diff-option">
+                                <input type="checkbox" id="jsonSortKeysOnCompare" checked>
+                                <span>排序 Key 后对比</span>
+                            </label>
+                            <label class="code-diff-option json-side-only">
+                                <input type="checkbox" id="jsonSideIgnoreWhitespace">
+                                <span>忽略空白</span>
+                            </label>
+                            <span id="jsonStructuralStats" class="json-structural-stats"></span>
+                            <span id="jsonSideStats" class="code-diff-stats json-side-only"></span>
+                            <span class="cdiff-nav json-structural-only">
+                                <button id="jsonStructuralPrevBtn" class="cdiff-nav-btn" title="上一个差异">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                        <path d="M18 15l-6-6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                <span id="jsonStructuralNavPos" class="cdiff-nav-pos"></span>
+                                <button id="jsonStructuralNextBtn" class="cdiff-nav-btn" title="下一个差异">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                        <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                            </span>
+                            <span class="cdiff-nav json-side-only">
+                                <button id="jsonSidePrevBtn" class="cdiff-nav-btn" title="上一个差异">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                        <path d="M18 15l-6-6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                                <span id="jsonSideNavPos" class="cdiff-nav-pos"></span>
+                                <button id="jsonSideNextBtn" class="cdiff-nav-btn" title="下一个差异">
+                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                        <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                    </svg>
+                                </button>
+                            </span>
+                        </div>
+                        <div class="cdiff-toolbar-right">
+                            <button id="jsonCompareBtn" class="tool-btn-action tech-btn primary">对比</button>
+                            <button id="jsonCompareSwapBtn" class="tool-btn-action tech-btn">交换 A ↔ B</button>
+                            <button id="jsonCompareClearBtn" class="tool-btn-action tech-btn">清空</button>
+                            <button id="jsonCompareFullscreenBtn" class="tool-btn-action tech-btn" title="全屏 (Esc 退出)">
+                                <svg class="cdiff-icon-expand" width="14" height="14" viewBox="0 0 24 24" fill="none">
+                                    <path d="M8 3H5a2 2 0 0 0-2 2v3m18 0V5a2 2 0 0 0-2-2h-3m0 18h3a2 2 0 0 0 2-2v-3M3 16v3a2 2 0 0 0 2 2h3"
+                                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                <svg class="cdiff-icon-collapse" width="14" height="14" viewBox="0 0 24 24" fill="none" style="display:none">
+                                    <path d="M5 9h4V5M19 9h-4V5M5 15h4v4M19 15h-4v4"
+                                        stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
+                                </svg>
+                                全屏
+                            </button>
+                        </div>
+                    </div>
+
+                    <div class="json-compare-inputs">
+                        <div class="json-diff-col">
+                            <span class="tool-label">JSON A (基准)</span>
+                            <textarea id="jsonCompareA" class="editor" placeholder='{"key": "value"}' spellcheck="false"></textarea>
+                        </div>
+                        <div class="json-diff-col">
+                            <span class="tool-label">JSON B (对比)</span>
+                            <textarea id="jsonCompareB" class="editor" placeholder='{"key": "newValue"}' spellcheck="false"></textarea>
+                        </div>
+                    </div>
+
+                    <div id="jsonStructuralCompare" class="json-compare-mode">
+                        <div id="jsonStructuralResult" class="json-diff-output">差异结果将显示在这里</div>
+                    </div>
+
+                    <div id="jsonSideBySideCompare" class="json-compare-mode hidden">
+                        <div id="jsonSideError" class="json-side-error"></div>
+                        <div class="cdiff-editor-container json-side-diff-container">
+                            <div class="cdiff-pane-edit">
+                                <div class="cdiff-input-header">JSON A (格式化)</div>
+                                <div class="cdiff-edit-area">
+                                    <div class="cdiff-gutter" id="jsonSideGutterA"></div>
+                                    <div class="cdiff-editor-wrap">
+                                        <div class="cdiff-backdrop" id="jsonSideBackdropA"></div>
+                                        <textarea id="jsonSideDiffA" class="cdiff-textarea" readonly spellcheck="false"></textarea>
+                                    </div>
+                                </div>
+                            </div>
+                            <div class="cdiff-divider"></div>
+                            <div class="cdiff-pane-edit">
+                                <div class="cdiff-input-header">JSON B (格式化)</div>
+                                <div class="cdiff-edit-area">
+                                    <div class="cdiff-gutter" id="jsonSideGutterB"></div>
+                                    <div class="cdiff-editor-wrap">
+                                        <div class="cdiff-backdrop" id="jsonSideBackdropB"></div>
+                                        <textarea id="jsonSideDiffB" class="cdiff-textarea" readonly spellcheck="false"></textarea>
+                                    </div>
+                                </div>
+                            </div>
                         </div>
                     </div>
                 </div>
@@ -603,6 +768,7 @@
                         <div class="tool-row">
                             <button id="jsonDiffBtn" class="tool-btn-action tech-btn primary">对比差异</button>
                             <button id="jsonDiffSwapBtn" class="tool-btn-action tech-btn">交换 A ↔ B</button>
+                            <button id="jsonDiffOpenToolBtn" class="tool-btn-action tech-btn">在 JSON 工具中打开</button>
                         </div>
                         <div class="tool-row">
                             <div id="jsonDiffResult" class="json-diff-output" style="width:100%;">差异结果将显示在这里</div>
@@ -859,6 +1025,9 @@
 
     <!-- CodeMirror Libraries -->
     <script src="lib/codemirror/lib/codemirror.js"></script>
+    <script src="lib/codemirror/addon/fold/foldcode.js"></script>
+    <script src="lib/codemirror/addon/fold/foldgutter.js"></script>
+    <script src="lib/codemirror/addon/fold/brace-fold.js"></script>
     <script src="lib/codemirror/mode/sql/sql.js"></script>
     <script src="lib/codemirror/mode/go/go.js"></script>
     <script src="lib/codemirror/mode/javascript/javascript.js"></script>
@@ -892,6 +1061,11 @@
     <script src="utils/markdown-exporter.js"></script>
     <script src="utils/image-lightbox.js"></script>
     <script src="utils/auto-formatter.js"></script>
+    <script src="utils/json-utils.js"></script>
+    <script src="utils/json-array-hints.js"></script>
+    <script src="utils/json-value-interaction.js"></script>
+    <script src="utils/diff-lines.js"></script>
+    <script src="generators/json-diff-engine.js"></script>
     <script src="utils/markdown-code-formatter.js"></script>
     <script src="utils/code-block-enhancer.js"></script>
     <script src="tools/toolbox.js"></script>
@@ -901,6 +1075,7 @@
     <script src="controllers/converter-controller.js"></script>
     <script src="controllers/diff-controller.js"></script>
     <script src="controllers/markdown-controller.js"></script>
+    <script src="controllers/json-controller.js"></script>
 
     <!-- App Orchestrator (must be last) -->
     <script src="app.js"></script>

@@ -162,6 +162,36 @@ class EditorManager {
             }
         `;
     }
+
+    /**
+     * Fold all foldable ranges in an editor (objects, arrays, braces)
+     * @param {string} textareaId
+     */
+    foldAll(textareaId) {
+        const editor = this.editors.get(textareaId);
+        if (!editor || typeof editor.foldCode !== 'function') return;
+
+        editor.operation(() => {
+            for (let line = 0; line < editor.lineCount(); line++) {
+                editor.foldCode({ line, ch: 0 }, null, 'fold');
+            }
+        });
+    }
+
+    /**
+     * Unfold all folded ranges in an editor
+     * @param {string} textareaId
+     */
+    unfoldAll(textareaId) {
+        const editor = this.editors.get(textareaId);
+        if (!editor || typeof editor.foldCode !== 'function') return;
+
+        editor.operation(() => {
+            for (let line = 0; line < editor.lineCount(); line++) {
+                editor.foldCode({ line, ch: 0 }, null, 'unfold');
+            }
+        });
+    }
 }
 
 // Export global instance

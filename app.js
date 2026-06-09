@@ -50,10 +50,12 @@
         modeConverter: document.getElementById('modeConverter'),
         modeDiff: document.getElementById('modeDiff'),
         modeMarkdown: document.getElementById('modeMarkdown'),
+        modeJson: document.getElementById('modeJson'),
         modeToolbox: document.getElementById('modeToolbox'),
         converterWorkspace: document.getElementById('converterWorkspace'),
         diffWorkspace: document.getElementById('diffWorkspace'),
         markdownWorkspace: document.getElementById('markdownWorkspace'),
+        jsonWorkspace: document.getElementById('jsonWorkspace'),
         toolboxWorkspace: document.getElementById('toolboxWorkspace'),
 
         // Markdown Elements
@@ -138,7 +140,9 @@
             setSettings: (s) => { currentSettings = s; },
             setStatus,
             debounce,
-            snakeToCamel
+            snakeToCamel,
+            refreshEditorsIn,
+            switchMode
         };
     }
 
@@ -152,10 +156,12 @@
         elements.modeConverter.classList.remove('active');
         elements.modeDiff.classList.remove('active');
         elements.modeMarkdown.classList.remove('active');
+        if (elements.modeJson) elements.modeJson.classList.remove('active');
         if (elements.modeToolbox) elements.modeToolbox.classList.remove('active');
         elements.converterWorkspace.classList.add('hidden');
         elements.diffWorkspace.classList.add('hidden');
         elements.markdownWorkspace.classList.add('hidden');
+        if (elements.jsonWorkspace) elements.jsonWorkspace.classList.add('hidden');
         if (elements.toolboxWorkspace) elements.toolboxWorkspace.classList.add('hidden');
 
         if (mode === 'converter') {
@@ -176,6 +182,12 @@
             elements.converterOptions.style.visibility = 'hidden';
             refreshEditorsIn('markdownInput');
             setStatus('Markdown 预览模式', 'ready');
+        } else if (mode === 'json') {
+            elements.modeJson.classList.add('active');
+            elements.jsonWorkspace.classList.remove('hidden');
+            elements.converterOptions.style.visibility = 'hidden';
+            refreshEditorsIn('jsonFormatInput', 'jsonFormatOutput', 'jsonCompareA', 'jsonCompareB');
+            setStatus('JSON 工具', 'ready');
         } else if (mode === 'toolbox') {
             elements.modeToolbox.classList.add('active');
             elements.toolboxWorkspace.classList.remove('hidden');
@@ -274,7 +286,7 @@
 
     const FILE_EXT_MODE = {
         '.sql': 'converter',
-        '.json': 'converter',
+        '.json': 'json',
         '.yaml': 'converter',
         '.yml': 'converter',
         '.toml': 'converter',
@@ -319,6 +331,13 @@
                 if (targetMode === 'markdown') {
                     await switchMode('markdown');
                     editorManager.setValue('markdownInput', content);
+                } else if (targetMode === 'json') {
+                    await switchMode('json');
+                    if (DevKit.JsonController) {
+                        DevKit.JsonController.loadContent(content, 'format');
+                    } else {
+                        editorManager.setValue('jsonFormatInput', content);
+                    }
                 } else {
                     await switchMode('converter');
                     editorManager.setValue('inputArea', content);
@@ -363,6 +382,22 @@
             placeholder: "输入 Markdown 文本...",
             theme: currentSettings.editorTheme
         });
+        editorManager.initFromTextArea('jsonFormatInput', 'json', {
+            placeholder: '粘贴 JSON 文本...',
+            theme: currentSettings.editorTheme
+        });
+        editorManager.initFromTextArea('jsonFormatOutput', 'json', {
+            readOnly: true,
+            theme: currentSettings.editorTheme
+        });
+        editorManager.initFromTextArea('jsonCompareA', 'json', {
+            placeholder: '{"key": "value"}',
+            theme: currentSettings.editorTheme
+        });
+        editorManager.initFromTextArea('jsonCompareB', 'json', {
+            placeholder: '{"key": "newValue"}',
+            theme: currentSettings.editorTheme
+        });
 
         if (currentSettings.editorFont) {
             editorManager.setFont(currentSettings.editorFont);
@@ -375,6 +410,7 @@
         if (DevKit.ConverterController) DevKit.ConverterController.init(ctx);
         if (DevKit.DiffController) DevKit.DiffController.init(ctx);
         if (DevKit.MarkdownController) DevKit.MarkdownController.init(ctx);
+        if (DevKit.JsonController) DevKit.JsonController.init(ctx);
         if (DevKit.ToolboxController) DevKit.ToolboxController.init();
 
         // Shared event listeners
@@ -386,6 +422,7 @@
         elements.modeConverter.addEventListener('click', () => switchMode('converter'));
         elements.modeDiff.addEventListener('click', () => switchMode('diff'));
         elements.modeMarkdown.addEventListener('click', () => switchMode('markdown'));
+        elements.modeJson.addEventListener('click', () => switchMode('json'));
         elements.modeToolbox.addEventListener('click', () => switchMode('toolbox'));
 
         // Appearance instant preview
