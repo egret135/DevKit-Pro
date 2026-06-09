@@ -44,6 +44,40 @@
         return ctx.getSettings().formatIndent ?? 4;
     }
 
+    function getFormatOptions() {
+        return {
+            indent: getIndentSetting(),
+            expandEscapedStrings: isExpandEscapedEnabled()
+        };
+    }
+
+    function isExpandEscapedEnabled() {
+        const checkbox = document.getElementById('jsonExpandEscaped');
+        if (checkbox) return checkbox.checked;
+        return ctx.getSettings().jsonExpandEscapedStrings === true;
+    }
+
+    function formatForOutput(value) {
+        return JsonUtils.format(value, getFormatOptions());
+    }
+
+    function formatCanonical(value) {
+        return JsonUtils.formatCanonical(value, { indent: getIndentSetting() });
+    }
+
+    function rerenderFormatOutput() {
+        const text = getFormatInput();
+        if (!text.trim()) return;
+
+        const parsed = JsonUtils.parse(text);
+        if (!parsed.ok) return;
+
+        const outputEditor = editorManager.get('jsonFormatOutput');
+        const scroll = outputEditor?.getScrollInfo();
+        setFormatOutput(formatForOutput(parsed.value));
+        restoreEditorScroll('jsonFormatOutput', scroll);
+    }
+
     function getFormatInput() {
         return editorManager.getValue('jsonFormatInput');
     }
@@ -208,12 +242,37 @@
 
     function refreshFormatOutputHints(formatted) {
         const editor = editorManager.get('jsonFormatOutput');
+        const expanded = isExpandEscapedEnabled();
+
         if (typeof JsonArrayHints !== 'undefined') {
-            JsonArrayHints.refreshEditor(editor, formatted);
+            if (expanded) JsonArrayHints.clear(editor);
+            else JsonArrayHints.refreshEditor(editor, formatted);
         }
+
         if (typeof JsonValueInteraction !== 'undefined') {
-            JsonValueInteraction.refreshEditor(editor, formatted);
+            if (expanded) JsonValueInteraction.refreshEditor(editor, '');
+            else JsonValueInteraction.refreshEditor(editor, formatted);
         }
+
+        editor?.getWrapperElement()?.classList.toggle('json-output-expanded-view', expanded);
+    }
+
+    function setEditorValuePreserveScroll(editorId, value) {
+        const editor = editorManager.get(editorId);
+        if (!editor) {
+            editorManager.setValue(editorId, value);
+            return;
+        }
+
+        const scroll = editor.getScrollInfo();
+        editor.setValue(value);
+        editor.scrollTo(scroll.left, scroll.top);
+    }
+
+    function restoreEditorScroll(editorId, scroll) {
+        const editor = editorManager.get(editorId);
+        if (!editor || !scroll) return;
+        editor.scrollTo(scroll.left, scroll.top);
     }
 
     function syncInputFromOutputEdit(path, newValue) {
@@ -226,17 +285,25 @@
         const root = JSON.parse(JSON.stringify(parsed.value));
         JsonValueInteraction.setAtPath(root, path, newValue);
 
-        const indent = getIndentSetting();
-        const newInputText = JsonUtils.format(root, { indent });
-        const newOutputText = JsonUtils.format(root, { indent });
+        const newInputText = formatCanonical(root);
+        const newOutputText = formatForOutput(root);
+
+        const outputEditor = editorManager.get('jsonFormatOutput');
+        const inputEditor = editorManager.get('jsonFormatInput');
+        const outputScroll = outputEditor?.getScrollInfo();
+        const inputScroll = inputEditor?.getScrollInfo();
 
         isAutoFormatting = true;
-        editorManager.setValue('jsonFormatInput', newInputText);
-        editorManager.setValue('jsonFormatOutput', newOutputText);
+        setEditorValuePreserveScroll('jsonFormatInput', newInputText);
+        setEditorValuePreserveScroll('jsonFormatOutput', newOutputText);
         isAutoFormatting = false;
 
         updateFormatMeta();
         refreshFormatOutputHints(newOutputText);
+
+        restoreEditorScroll('jsonFormatInput', inputScroll);
+        restoreEditorScroll('jsonFormatOutput', outputScroll);
+
         ctx.setStatus('字段已更新并同步到输入', 'success');
     }
 
@@ -318,10 +385,21 @@
             });
         }
 
+        const expandEscapedCheckbox = document.getElementById('jsonExpandEscaped');
+        if (expandEscapedCheckbox) {
+            expandEscapedCheckbox.checked = ctx.getSettings().jsonExpandEscapedStrings === true;
+            expandEscapedCheckbox.addEventListener('change', () => {
+                ctx.getSettings().jsonExpandEscapedStrings = expandEscapedCheckbox.checked;
+                Settings.save(ctx.getSettings());
+                rerenderFormatOutput();
+            });
+        }
+
         document.getElementById('jsonFormatBtn')?.addEventListener('click', handleFormat);
         document.getElementById('jsonMinifyBtn')?.addEventListener('click', handleMinify);
         document.getElementById('jsonSortKeysBtn')?.addEventListener('click', handleSortKeys);
         document.getElementById('jsonCopyBtn')?.addEventListener('click', handleCopy);
+        document.getElementById('jsonApplyToInputBtn')?.addEventListener('click', handleApplyToInput);
         document.getElementById('jsonClearBtn')?.addEventListener('click', handleClear);
         document.getElementById('jsonFoldAllBtn')?.addEventListener('click', () => {
             editorManager.foldAll('jsonFormatOutput');
@@ -415,11 +493,11 @@
 
         try {
             isAutoFormatting = true;
-            const formatted = JsonUtils.format(text, { indent: getIndentSetting() });
+            const formatted = formatForOutput(text);
             if (formatted !== getFormatOutput()) {
                 setFormatOutput(formatted);
             } else {
-                hideFormatError();
+                refreshFormatOutputHints(formatted);
             }
         } catch (_) {
             // ignore while typing incomplete JSON
@@ -435,7 +513,7 @@
             return;
         }
         try {
-            const formatted = JsonUtils.format(text, { indent: getIndentSetting() });
+            const formatted = formatForOutput(text);
             setFormatOutput(formatted);
             ctx.setStatus('JSON 已格式化', 'success');
         } catch (e) {
@@ -480,20 +558,55 @@
             return;
         }
         const sorted = JsonUtils.sortKeys(parsed.value);
-        setFormatOutput(JsonUtils.format(sorted, { indent: getIndentSetting() }));
+        setFormatOutput(formatForOutput(sorted));
         ctx.setStatus('Key 已排序并格式化', 'success');
     }
 
+    function getSyncableOutputText() {
+        const outputText = getFormatOutput().trim();
+        if (!outputText) return null;
+
+        if (isExpandEscapedEnabled()) {
+            const parsed = JsonUtils.parse(getFormatInput());
+            if (!parsed.ok) return null;
+            return formatCanonical(parsed.value);
+        }
+
+        const outputParsed = JsonUtils.parse(outputText);
+        if (!outputParsed.ok) return null;
+        return outputText;
+    }
+
+    function handleApplyToInput() {
+        const textToApply = getSyncableOutputText();
+        if (!textToApply) {
+            ctx.setStatus('没有可应用的结果，请先格式化', 'error');
+            return;
+        }
+
+        isAutoFormatting = true;
+        setEditorValuePreserveScroll('jsonFormatInput', textToApply);
+        isAutoFormatting = false;
+
+        updateFormatMeta();
+        runAutoValidate();
+        ctx.setStatus('已应用到输入', 'success');
+    }
+
     function handleCopy() {
-        const text = getFormatOutput();
-        if (!text.trim()) {
+        const text = getSyncableOutputText();
+        if (!text) {
             ctx.setStatus('没有可复制的内容，请先格式化', 'error');
             return;
         }
+
         navigator.clipboard.writeText(text).then(() => {
             const btn = document.getElementById('jsonCopyBtn');
             btn?.classList.add('copied');
             setTimeout(() => btn?.classList.remove('copied'), 600);
+            if (isExpandEscapedEnabled()) {
+                ctx.setStatus('已复制标准 JSON', 'success');
+            }
         }).catch(() => ctx.setStatus('复制失败', 'error'));
     }
 

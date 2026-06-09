@@ -2907,23 +2907,112 @@ body {
     box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.35);
 }
 
-
-.json-value-edit-box {
-    position: absolute;
-    z-index: 20;
+/* JSON value edit modal */
+.json-value-edit-modal-container {
+    width: 420px;
+    max-width: calc(100vw - 32px);
 }
 
-.json-value-inline-input {
+.json-value-edit-modal .modal-footer {
+    gap: var(--space-4);
+}
+
+.json-value-edit-meta {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    margin-bottom: var(--space-3);
+}
+
+.json-value-edit-label {
+    display: block;
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    margin-bottom: var(--space-2);
+    min-width: 36px;
+    flex-shrink: 0;
+}
+
+.json-value-edit-meta .json-value-edit-label {
+    margin-bottom: 0;
+}
+
+.json-value-edit-path {
     font-family: var(--font-mono);
     font-size: 13px;
-    line-height: 20px;
-    padding: 0 8px;
-    border: 1px solid var(--color-accent);
-    border-radius: 4px;
+    color: var(--color-accent);
+    background: var(--color-bg-secondary);
+    padding: 4px 8px;
+    border-radius: var(--radius-sm);
+    word-break: break-all;
+}
+
+.json-value-edit-type {
+    font-size: 13px;
+    color: var(--color-text-primary);
+}
+
+.json-value-edit-input {
+    width: 100%;
+    font-family: var(--font-mono);
+    font-size: 14px;
+    padding: 10px 12px;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
     background: var(--color-bg);
     color: var(--color-text-primary);
-    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.12);
     outline: none;
+    resize: vertical;
+    min-height: 40px;
+    line-height: 1.5;
+    transition: border-color var(--transition-fast), box-shadow var(--transition-fast);
+}
+
+.json-value-edit-input.is-multiline {
+    min-height: 96px;
+}
+
+.json-output-expanded-view {
+    position: relative;
+}
+
+.json-output-expanded-view::after {
+    content: '展开视图（非标准 JSON）';
+    position: absolute;
+    top: 8px;
+    right: 12px;
+    z-index: 2;
+    font-size: 10px;
+    color: var(--color-text-tertiary);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    padding: 2px 8px;
+    pointer-events: none;
+}
+
+.json-value-edit-input:focus {
+    border-color: var(--color-accent);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.15);
+}
+
+.json-value-edit-hint {
+    margin-top: var(--space-2);
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+    line-height: 1.5;
+}
+
+.json-value-edit-error {
+    margin-top: var(--space-2);
+    font-size: 12px;
+    color: #b91c1c;
+    line-height: 1.5;
+}
+
+.json-value-edit-error.hidden {
+    display: none;
 }
 
 .tool-btn-action.copied {

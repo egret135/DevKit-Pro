@@ -169,6 +169,59 @@ const JsonUtils = (function () {
         };
     }
 
+    function tryParseEmbeddedJson(str) {
+        if (typeof str !== 'string') return null;
+        const trimmed = str.trim();
+        if (!trimmed.startsWith('{') && !trimmed.startsWith('[')) return null;
+        try {
+            const parsed = JSON.parse(trimmed);
+            if (typeof parsed === 'object' && parsed !== null) return parsed;
+            return null;
+        } catch (_) {
+            return null;
+        }
+    }
+
+    function isEmbeddedJsonString(str) {
+        return tryParseEmbeddedJson(str) !== null;
+    }
+
+    function formatValue(value, level, indentStr, opts) {
+        const currentIndent = indentStr.repeat(level);
+        const innerIndent = indentStr.repeat(level + 1);
+
+        if (value === null) return 'null';
+        if (typeof value === 'boolean' || typeof value === 'number') return String(value);
+
+        if (typeof value === 'string') {
+            if (opts.expandEscapedStrings) {
+                const embedded = tryParseEmbeddedJson(value);
+                if (embedded !== null) {
+                    return formatValue(embedded, level, indentStr, opts);
+                }
+            }
+            return JSON.stringify(value);
+        }
+
+        if (Array.isArray(value)) {
+            if (value.length === 0) return '[]';
+            const lines = value.map((item) => `${innerIndent}${formatValue(item, level + 1, indentStr, opts)}`);
+            return `[\n${lines.join(',\n')}\n${currentIndent}]`;
+        }
+
+        const keys = Object.keys(value);
+        if (keys.length === 0) return '{}';
+        const lines = keys.map((key) => {
+            const formattedValue = formatValue(value[key], level + 1, indentStr, opts);
+            const valueOnSameLine = !formattedValue.includes('\n');
+            if (valueOnSameLine) {
+                return `${innerIndent}${JSON.stringify(key)}: ${formattedValue}`;
+            }
+            return `${innerIndent}${JSON.stringify(key)}: ${formattedValue}`;
+        });
+        return `{\n${lines.join(',\n')}\n${currentIndent}}`;
+    }
+
     function format(value, opts = {}) {
         let parsedValue = value;
         if (typeof value === 'string') {
@@ -176,8 +229,16 @@ const JsonUtils = (function () {
             if (!parsed.ok) throw new Error(parsed.error);
             parsedValue = parsed.value;
         }
-        const space = getIndentString(opts.indent ?? 4);
-        return JSON.stringify(parsedValue, null, space);
+
+        const indentStr = getIndentString(opts.indent ?? 4);
+        if (opts.expandEscapedStrings) {
+            return formatValue(parsedValue, 0, indentStr, opts);
+        }
+        return JSON.stringify(parsedValue, null, indentStr);
+    }
+
+    function formatCanonical(value, opts = {}) {
+        return format(value, { ...opts, expandEscapedStrings: false });
     }
 
     function minify(value) {
@@ -233,6 +294,7 @@ const JsonUtils = (function () {
     return {
         parse,
         format,
+        formatCanonical,
         minify,
         sortKeys,
         normalizeForCompare,
@@ -240,6 +302,8 @@ const JsonUtils = (function () {
         getIndentString,
         buildErrorReport,
         humanizeError,
-        getErrorContext
+        getErrorContext,
+        isEmbeddedJsonString,
+        tryParseEmbeddedJson
     };
 })();

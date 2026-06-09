@@ -337,6 +337,7 @@
                             <button id="jsonMinifyBtn" class="tool-btn-action tech-btn">压缩</button>
                             <button id="jsonSortKeysBtn" class="tool-btn-action tech-btn">排序 Key</button>
                             <button id="jsonCopyBtn" class="tool-btn-action tech-btn">复制</button>
+                            <button id="jsonApplyToInputBtn" class="tool-btn-action tech-btn" title="将右侧格式化结果写入左侧输入框">应用到输入</button>
                             <button id="jsonClearBtn" class="tool-btn-action tech-btn">清空</button>
                             <span class="json-toolbar-divider" aria-hidden="true"></span>
                             <button id="jsonFoldAllBtn" class="tool-btn-action tech-btn" title="折叠全部 Object / Array">全部折叠</button>
@@ -344,6 +345,10 @@
                             <label class="code-diff-option json-auto-format-option">
                                 <input type="checkbox" id="jsonAutoFormat" checked>
                                 <span>自动格式化</span>
+                            </label>
+                            <label class="code-diff-option json-auto-format-option" title="将字符串中的转义 JSON 展开为对象/数组展示（只影响结果面板）">
+                                <input type="checkbox" id="jsonExpandEscaped">
+                                <span>展开转义 JSON</span>
                             </label>
                         </div>
                         <div class="json-toolbar-right">
@@ -903,6 +908,39 @@
                 <span id="lineCount" class="info">0 行</span>
             </div>
         </footer>
+
+        <!-- JSON Value Edit Modal -->
+        <div id="jsonValueEditModal" class="modal json-value-edit-modal hidden">
+            <div class="modal-overlay" id="jsonValueEditModalOverlay"></div>
+            <div class="modal-container json-value-edit-modal-container">
+                <div class="modal-header">
+                    <h2>编辑字段值</h2>
+                    <button id="jsonValueEditCloseBtn" class="btn-icon" type="button" title="关闭">
+                        <svg width="20" height="20" viewBox="0 0 24 24" fill="none">
+                            <path d="M18 6L6 18M6 6l12 12" stroke="currentColor" stroke-width="2" stroke-linecap="round" />
+                        </svg>
+                    </button>
+                </div>
+                <div class="modal-body">
+                    <div class="json-value-edit-meta">
+                        <span class="json-value-edit-label">路径</span>
+                        <code id="jsonValueEditPath" class="json-value-edit-path"></code>
+                    </div>
+                    <div class="json-value-edit-meta">
+                        <span class="json-value-edit-label">类型</span>
+                        <span id="jsonValueEditType" class="json-value-edit-type"></span>
+                    </div>
+                    <label class="json-value-edit-label" for="jsonValueEditInput">新值</label>
+                    <textarea id="jsonValueEditInput" class="json-value-edit-input" rows="1" autocomplete="off" spellcheck="false"></textarea>
+                    <p id="jsonValueEditHint" class="json-value-edit-hint"></p>
+                    <p id="jsonValueEditError" class="json-value-edit-error hidden"></p>
+                </div>
+                <div class="modal-footer">
+                    <button id="jsonValueEditCancelBtn" class="btn-ghost" type="button">取消</button>
+                    <button id="jsonValueEditSaveBtn" class="btn-primary" type="button">保存</button>
+                </div>
+            </div>
+        </div>
 
         <!-- Settings Modal -->
         <div id="settingsModal" class="modal hidden">

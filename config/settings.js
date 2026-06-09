@@ -16,7 +16,8 @@ const Settings = {
         jsonCompareMode: 'structural', // 'structural' | 'sideBySide'
         jsonSortKeysOnCompare: true,
         jsonSubView: 'format', // 'format' | 'compare'
-        jsonAutoFormat: true
+        jsonAutoFormat: true,
+        jsonExpandEscapedStrings: false
     },
 
     getStorageArea() {

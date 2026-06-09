@@ -4,6 +4,22 @@ const JsonValueInteraction = (function () {
     'use strict';
 
     const stateStore = new WeakMap();
+    let activeEditContext = null;
+    let modalInitialized = false;
+
+    const TYPE_LABELS = {
+        string: '字符串',
+        number: '数字',
+        boolean: '布尔',
+        null: '空值'
+    };
+
+    const TYPE_HINTS = {
+        string: '直接输入文本内容，无需加引号。',
+        number: '输入合法数字，例如 42、-3.14。',
+        boolean: '输入 true 或 false。',
+        null: '输入 null。'
+    };
 
     function skipWs(str, pos) {
         while (pos.v < str.length && /\s/.test(str[pos.v])) {
@@ -24,6 +40,14 @@ const JsonValueInteraction = (function () {
         if (typeof value === 'boolean') return 'boolean';
         if (typeof value === 'number') return 'number';
         return 'string';
+    }
+
+    function formatPath(path) {
+        if (!path.length) return '$';
+        return path.reduce((acc, key) => {
+            if (typeof key === 'number') return `${acc}[${key}]`;
+            return `${acc}.${key}`;
+        }, '$');
     }
 
     function collect(value, formatted) {
@@ -103,7 +127,9 @@ const JsonValueInteraction = (function () {
             from: indexToPos(formatted, start),
             to: indexToPos(formatted, pos.v),
             value,
-            type: primitiveType(value)
+            type: primitiveType(value),
+            embeddedJson: typeof value === 'string' && typeof JsonUtils !== 'undefined'
+                && JsonUtils.isEmbeddedJsonString(value)
         });
     }
 
@@ -157,12 +183,42 @@ const JsonValueInteraction = (function () {
         return root;
     }
 
-    function posInRange(pos, from, to) {
-        return CodeMirror.cmpPos(pos, from) >= 0 && CodeMirror.cmpPos(pos, to) <= 0;
+    function getPrimitivesForEditor(editor) {
+        const text = editor.getValue();
+        if (!text.trim() || typeof JsonUtils === 'undefined') return [];
+
+        const parsed = JsonUtils.parse(text);
+        if (!parsed.ok) return [];
+
+        return collect(parsed.value, text);
     }
 
-    function findPrimitiveAt(primitives, pos) {
-        return primitives.find((item) => posInRange(pos, item.from, item.to)) || null;
+    function posInRange(pos, from, to) {
+        return CodeMirror.cmpPos(pos, from) >= 0 && CodeMirror.cmpPos(pos, to) < 0;
+    }
+
+    function findPrimitiveAt(editor, clickPos) {
+        const primitives = getPrimitivesForEditor(editor);
+
+        let item = primitives.find((p) => posInRange(clickPos, p.from, p.to));
+        if (item) return item;
+
+        item = primitives.find((p) => (
+            p.from.line === clickPos.line
+            && clickPos.ch >= p.from.ch
+            && clickPos.ch < p.to.ch
+        ));
+        if (item) return item;
+
+        return primitives.find((p) => {
+            if (p.from.line !== clickPos.line) return false;
+            const mid = (p.from.ch + p.to.ch) / 2;
+            return Math.abs(clickPos.ch - mid) <= 2;
+        }) || null;
+    }
+
+    function getClickPos(editor, event) {
+        return editor.coordsChar({ left: event.clientX, top: event.clientY }, 'window');
     }
 
     function formatCopyText(item) {
@@ -172,16 +228,28 @@ const JsonValueInteraction = (function () {
     }
 
     function formatEditText(item) {
+        if (item.type === 'string' && item.embeddedJson && typeof JsonUtils !== 'undefined') {
+            const embedded = JsonUtils.tryParseEmbeddedJson(item.value);
+            return JsonUtils.formatCanonical(embedded, { indent: 2 });
+        }
         if (item.type === 'string') return String(item.value);
         if (item.type === 'null') return 'null';
         return String(item.value);
     }
 
-    function parseEditText(text, type) {
+    function parseEditText(text, type, item) {
         const trimmed = text.trim();
 
         switch (type) {
             case 'string':
+                if (item?.embeddedJson) {
+                    try {
+                        const parsed = JSON.parse(trimmed);
+                        return JSON.stringify(parsed);
+                    } catch (_) {
+                        return undefined;
+                    }
+                }
                 return text;
             case 'number': {
                 if (!trimmed) return undefined;
@@ -201,53 +269,195 @@ const JsonValueInteraction = (function () {
         }
     }
 
+    function initEditModal() {
+        if (modalInitialized) return;
+        modalInitialized = true;
+
+        const modal = document.getElementById('jsonValueEditModal');
+        const overlay = document.getElementById('jsonValueEditModalOverlay');
+        const closeBtn = document.getElementById('jsonValueEditCloseBtn');
+        const cancelBtn = document.getElementById('jsonValueEditCancelBtn');
+        const saveBtn = document.getElementById('jsonValueEditSaveBtn');
+        const input = document.getElementById('jsonValueEditInput');
+
+        const close = () => closeEditModal();
+
+        overlay?.addEventListener('click', close);
+        closeBtn?.addEventListener('click', close);
+        cancelBtn?.addEventListener('click', close);
+        saveBtn?.addEventListener('click', () => commitEditModal());
+
+        input?.addEventListener('keydown', (event) => {
+            if (event.key === 'Enter' && !event.shiftKey && !activeEditContext?.item?.embeddedJson) {
+                event.preventDefault();
+                commitEditModal();
+            } else if (event.key === 'Enter' && event.metaKey) {
+                event.preventDefault();
+                commitEditModal();
+            } else if (event.key === 'Escape') {
+                event.preventDefault();
+                closeEditModal();
+            }
+        });
+
+        document.addEventListener('keydown', (event) => {
+            if (event.key === 'Escape' && activeEditContext) {
+                closeEditModal();
+            }
+        });
+    }
+
+    function showEditError(message) {
+        const errorEl = document.getElementById('jsonValueEditError');
+        if (!errorEl) return;
+        errorEl.textContent = message;
+        errorEl.classList.remove('hidden');
+    }
+
+    function clearEditError() {
+        const errorEl = document.getElementById('jsonValueEditError');
+        if (!errorEl) return;
+        errorEl.textContent = '';
+        errorEl.classList.add('hidden');
+    }
+
+    function openEditModal(editor, state, item) {
+        initEditModal();
+        clearEditError();
+
+        activeEditContext = { editor, state, item };
+
+        const modal = document.getElementById('jsonValueEditModal');
+        const pathEl = document.getElementById('jsonValueEditPath');
+        const typeEl = document.getElementById('jsonValueEditType');
+        const hintEl = document.getElementById('jsonValueEditHint');
+        const input = document.getElementById('jsonValueEditInput');
+
+        if (!modal || !input) return;
+
+        if (pathEl) pathEl.textContent = formatPath(item.path);
+        if (typeEl) {
+            typeEl.textContent = item.embeddedJson
+                ? `${TYPE_LABELS.string}（嵌入 JSON）`
+                : (TYPE_LABELS[item.type] || item.type);
+        }
+        if (hintEl) {
+            hintEl.textContent = item.embeddedJson
+                ? '按 JSON 对象/数组编辑，保存后将自动转回字符串。'
+                : (TYPE_HINTS[item.type] || '');
+        }
+
+        input.value = formatEditText(item);
+        input.rows = item.embeddedJson ? Math.min(12, Math.max(4, input.value.split('\n').length)) : 1;
+        input.classList.toggle('is-multiline', !!item.embeddedJson);
+
+        modal.classList.remove('hidden');
+        requestAnimationFrame(() => {
+            input.focus();
+            input.select();
+        });
+    }
+
+    function closeEditModal() {
+        const modal = document.getElementById('jsonValueEditModal');
+        modal?.classList.add('hidden');
+        clearEditError();
+        activeEditContext = null;
+    }
+
+    function commitEditModal() {
+        if (!activeEditContext) return;
+
+        const { state, item } = activeEditContext;
+        const input = document.getElementById('jsonValueEditInput');
+        if (!input) return;
+
+        const parsed = parseEditText(input.value, item.type, item);
+        if (parsed === undefined) {
+            const typeLabel = item.embeddedJson ? '嵌入 JSON' : (TYPE_LABELS[item.type] || item.type);
+            showEditError(`输入不符合 ${typeLabel} 类型，请检查后重试。`);
+            input.focus();
+            input.select();
+            return;
+        }
+
+        if (!Object.is(parsed, item.value)) {
+            if (typeof state.callbacks.onValueChange === 'function') {
+                state.callbacks.onValueChange(item.path.slice(), parsed, item);
+            }
+        }
+
+        closeEditModal();
+    }
+
     function init(editor, callbacks) {
         if (!editor || typeof CodeMirror === 'undefined') return;
+
+        initEditModal();
 
         const wrapper = editor.getWrapperElement();
         wrapper.classList.add('json-value-interactive');
 
         const state = {
-            primitives: [],
             hoverMark: null,
             clickTimer: null,
-            editEl: null,
+            lastClickAt: 0,
             callbacks: callbacks || {}
         };
         stateStore.set(editor, state);
 
-        wrapper.addEventListener('mousemove', (event) => {
-            if (state.editEl) return;
-            const pos = editor.coordsChar({ left: event.clientX, top: event.clientY }, 'window');
-            const item = findPrimitiveAt(state.primitives, pos);
-            setHover(editor, state, item);
+        editor.on('mousemove', (cm, event) => {
+            if (activeEditContext) return;
+            const item = findPrimitiveAt(cm, getClickPos(cm, event));
+            setHover(cm, state, item);
         });
 
         wrapper.addEventListener('mouseleave', () => {
             setHover(editor, state, null);
         });
 
-        wrapper.addEventListener('click', (event) => {
-            if (state.editEl) return;
-            const pos = editor.coordsChar({ left: event.clientX, top: event.clientY }, 'window');
-            const item = findPrimitiveAt(state.primitives, pos);
+        const handlePointer = (editorInstance, event, isDouble) => {
+            if (activeEditContext) return;
+            if (editorInstance.getWrapperElement()?.classList.contains('json-output-expanded-view')) {
+                return;
+            }
+
+            const item = findPrimitiveAt(editorInstance, getClickPos(editorInstance, event));
             if (!item) return;
 
             event.preventDefault();
+            event.stopPropagation();
+
+            if (isDouble) {
+                clearTimeout(state.clickTimer);
+                state.clickTimer = null;
+                openEditModal(editorInstance, state, item);
+                return;
+            }
+
+            const now = Date.now();
+            if (now - state.lastClickAt < 320) {
+                clearTimeout(state.clickTimer);
+                state.clickTimer = null;
+                openEditModal(editorInstance, state, item);
+                return;
+            }
+            state.lastClickAt = now;
+
             clearTimeout(state.clickTimer);
             state.clickTimer = setTimeout(() => {
-                copyPrimitive(editor, state, item);
-            }, 220);
+                state.clickTimer = null;
+                copyPrimitive(editorInstance, state, item);
+            }, 280);
+        };
+
+        editor.on('mousedown', (cm, event) => {
+            if (event.button !== 0) return;
+            handlePointer(cm, event, event.detail >= 2);
         });
 
-        wrapper.addEventListener('dblclick', (event) => {
-            const pos = editor.coordsChar({ left: event.clientX, top: event.clientY }, 'window');
-            const item = findPrimitiveAt(state.primitives, pos);
-            if (!item) return;
-
-            event.preventDefault();
-            clearTimeout(state.clickTimer);
-            openEditor(editor, state, item);
+        editor.on('dblclick', (cm, event) => {
+            handlePointer(cm, event, true);
         });
     }
 
@@ -257,9 +467,7 @@ const JsonValueInteraction = (function () {
             state.hoverMark = null;
         }
 
-        if (!item) {
-            return;
-        }
+        if (!item) return;
 
         state.hoverMark = editor.markText(item.from, item.to, {
             className: 'json-value-hover'
@@ -300,100 +508,15 @@ const JsonValueInteraction = (function () {
         });
     }
 
-    function closeEditor(state) {
-        if (state.editEl) {
-            state.editEl.remove();
-            state.editEl = null;
-        }
-    }
-
-    function openEditor(editor, state, item) {
-        closeEditor(state);
-
-        const wrap = editor.getWrapperElement();
-        const coords = editor.charCoords(item.from, 'local');
-        const endCoords = editor.charCoords(item.to, 'local');
-
-        const box = document.createElement('div');
-        box.className = 'json-value-edit-box';
-
-        const input = document.createElement('input');
-        input.type = 'text';
-        input.className = 'json-value-inline-input';
-        input.value = formatEditText(item);
-        input.style.minWidth = `${Math.max(96, endCoords.right - coords.left + 12)}px`;
-
-        box.appendChild(input);
-        box.style.left = `${coords.left}px`;
-        box.style.top = `${coords.top}px`;
-        wrap.appendChild(box);
-        state.editEl = box;
-
-        input.focus();
-        input.select();
-
-        let committed = false;
-        const commit = () => {
-            if (committed) return;
-            committed = true;
-
-            const parsed = parseEditText(input.value, item.type);
-            closeEditor(state);
-
-            if (parsed === undefined) {
-                if (typeof state.callbacks.onEditError === 'function') {
-                    state.callbacks.onEditError(item);
-                }
-                return;
-            }
-
-            if (Object.is(parsed, item.value)) return;
-
-            if (typeof state.callbacks.onValueChange === 'function') {
-                state.callbacks.onValueChange(item.path.slice(), parsed, item);
-            }
-        };
-
-        input.addEventListener('keydown', (event) => {
-            if (event.key === 'Enter') {
-                event.preventDefault();
-                commit();
-            } else if (event.key === 'Escape') {
-                event.preventDefault();
-                committed = true;
-                closeEditor(state);
-            }
-        });
-
-        input.addEventListener('blur', () => {
-            setTimeout(commit, 80);
-        });
-    }
-
     function refreshEditor(editor, formattedText) {
         const state = stateStore.get(editor);
         if (!state) return;
 
-        closeEditor(state);
+        if (activeEditContext?.editor === editor) {
+            closeEditModal();
+        }
+
         setHover(editor, state, null);
-
-        if (!formattedText || !formattedText.trim()) {
-            state.primitives = [];
-            return;
-        }
-
-        if (typeof JsonUtils === 'undefined') {
-            state.primitives = [];
-            return;
-        }
-
-        const parsed = JsonUtils.parse(formattedText);
-        if (!parsed.ok) {
-            state.primitives = [];
-            return;
-        }
-
-        state.primitives = collect(parsed.value, formattedText);
     }
 
     return {
