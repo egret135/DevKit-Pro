@@ -42,14 +42,6 @@ const JsonValueInteraction = (function () {
         return 'string';
     }
 
-    function formatPath(path) {
-        if (!path.length) return '$';
-        return path.reduce((acc, key) => {
-            if (typeof key === 'number') return `${acc}[${key}]`;
-            return `${acc}.${key}`;
-        }, '$');
-    }
-
     function collect(value, formatted) {
         const primitives = [];
         const pos = { v: 0 };
@@ -328,19 +320,11 @@ const JsonValueInteraction = (function () {
         activeEditContext = { editor, state, item };
 
         const modal = document.getElementById('jsonValueEditModal');
-        const pathEl = document.getElementById('jsonValueEditPath');
-        const typeEl = document.getElementById('jsonValueEditType');
         const hintEl = document.getElementById('jsonValueEditHint');
         const input = document.getElementById('jsonValueEditInput');
 
         if (!modal || !input) return;
 
-        if (pathEl) pathEl.textContent = formatPath(item.path);
-        if (typeEl) {
-            typeEl.textContent = item.embeddedJson
-                ? `${TYPE_LABELS.string}（嵌入 JSON）`
-                : (TYPE_LABELS[item.type] || item.type);
-        }
         if (hintEl) {
             hintEl.textContent = item.embeddedJson
                 ? '按 JSON 对象/数组编辑，保存后将自动转回字符串。'
@@ -348,7 +332,9 @@ const JsonValueInteraction = (function () {
         }
 
         input.value = formatEditText(item);
-        input.rows = item.embeddedJson ? Math.min(12, Math.max(4, input.value.split('\n').length)) : 1;
+        input.rows = item.embeddedJson
+            ? Math.min(18, Math.max(10, input.value.split('\n').length))
+            : 5;
         input.classList.toggle('is-multiline', !!item.embeddedJson);
 
         modal.classList.remove('hidden');
