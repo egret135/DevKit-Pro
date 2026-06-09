@@ -338,34 +338,33 @@
                             <button id="jsonSortKeysBtn" class="tool-btn-action tech-btn">排序 Key</button>
                             <button id="jsonCopyBtn" class="tool-btn-action tech-btn">复制</button>
                             <button id="jsonClearBtn" class="tool-btn-action tech-btn">清空</button>
+                            <span class="json-toolbar-divider" aria-hidden="true"></span>
+                            <button id="jsonFoldAllBtn" class="tool-btn-action tech-btn" title="折叠全部 Object / Array">全部折叠</button>
+                            <button id="jsonUnfoldAllBtn" class="tool-btn-action tech-btn" title="展开全部">全部展开</button>
                             <label class="code-diff-option json-auto-format-option">
                                 <input type="checkbox" id="jsonAutoFormat" checked>
                                 <span>自动格式化</span>
                             </label>
                         </div>
                         <div class="json-toolbar-right">
+                            <span id="jsonFormatCopyToast" class="json-format-copy-toast" aria-live="polite"></span>
                             <span class="json-indent-hint">缩进跟随全局设置</span>
                             <span id="jsonFormatMeta" class="json-format-meta">0 行</span>
                         </div>
                     </div>
                     <div class="json-format-panels">
                         <div class="panel json-format-panel">
-                            <div class="panel-header">
+                            <div class="panel-header json-format-panel-header">
                                 <div class="panel-title">输入</div>
                             </div>
-                            <div class="panel-body">
+                            <div class="panel-body json-format-editor-body">
                                 <textarea id="jsonFormatInput" class="editor" placeholder='粘贴 JSON 文本，例如：&#10;{"name":"DevKit","version":1}'
                                     spellcheck="false"></textarea>
                             </div>
                         </div>
                         <div class="panel json-format-panel">
-                            <div class="panel-header">
+                            <div class="panel-header json-format-panel-header">
                                 <div class="panel-title">格式化结果</div>
-                                <span id="jsonFormatCopyToast" class="json-format-copy-toast" aria-live="polite"></span>
-                                <div class="panel-actions">
-                                    <button id="jsonFoldAllBtn" class="btn-ghost" title="折叠全部 Object / Array">全部折叠</button>
-                                    <button id="jsonUnfoldAllBtn" class="btn-ghost" title="展开全部">全部展开</button>
-                                </div>
                             </div>
                             <div class="panel-body json-format-output-body">
                                 <div id="jsonFormatErrorView" class="json-format-error-view hidden" aria-live="polite"></div>

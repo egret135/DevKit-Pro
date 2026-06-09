@@ -2564,15 +2564,21 @@ body {
 .json-format-panels {
     display: grid;
     grid-template-columns: 1fr 1fr;
+    grid-template-rows: 1fr;
     flex: 1;
     min-height: 0;
     gap: 0;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
     overflow: hidden;
+    align-items: stretch;
 }
 
 .json-format-panels .json-format-panel {
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+    height: 100%;
     border-right: 1px solid var(--color-border);
     border-radius: 0;
 }
@@ -2581,27 +2587,58 @@ body {
     border-right: none;
 }
 
-.json-format-panel {
-    flex: 1;
-    min-height: 0;
+.json-format-panel-header {
+    flex-shrink: 0;
+    min-height: 40px;
+    padding: var(--space-2) var(--space-4);
 }
 
-.json-format-panel .panel-body {
-    height: 100%;
-    min-height: 400px;
+.json-toolbar-divider {
+    width: 1px;
+    height: 20px;
+    background: var(--color-border);
+    margin: 0 var(--space-1);
+    flex-shrink: 0;
+}
+
+.json-format-editor-body {
+    flex: 1;
+    min-height: 0;
+    position: relative;
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
 }
 
 .json-format-output-body {
     position: relative;
     display: flex;
     flex-direction: column;
-    min-height: 400px;
+    flex: 1;
+    min-height: 0;
 }
 
 .json-format-output-wrap {
     flex: 1;
     min-height: 0;
-    height: 100%;
+    position: relative;
+    overflow: hidden;
+}
+
+.json-format-editor-body .CodeMirror,
+.json-format-output-wrap .CodeMirror {
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
+    height: 100% !important;
+}
+
+#jsonFormatView .json-format-editor-body .CodeMirror-gutters,
+#jsonFormatView .json-format-output-wrap .CodeMirror-gutters {
+    left: 0 !important;
+    position: absolute !important;
 }
 
 .json-format-output-body.is-error .json-format-output-wrap,
@@ -2830,13 +2867,8 @@ body {
     box-shadow: inset 0 0 0 1px rgba(59, 130, 246, 0.35);
 }
 
-.json-format-panel .panel-header {
-    gap: var(--space-3);
-}
 
 .json-format-copy-toast {
-    margin-left: auto;
-    margin-right: var(--space-2);
     font-size: 11px;
     font-weight: 500;
     line-height: 18px;
