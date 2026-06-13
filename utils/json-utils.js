@@ -3,6 +3,13 @@
 const JsonUtils = (function () {
     'use strict';
 
+    const THRESHOLDS = {
+        LARGE_CHARS: 200 * 1024,
+        WORKER_CHARS: 512 * 1024,
+        LONG_LINE_CHARS: 8000,
+        MAX_ARRAY_HINTS: 300
+    };
+
     function getIndentOptions(indentSetting) {
         if (indentSetting === 'tab') {
             return { useTabs: true, tabWidth: 1 };
@@ -115,6 +122,11 @@ const JsonUtils = (function () {
                 test: /Bad escaped character/i,
                 summary: '转义字符无效',
                 hint: '请检查 `\\` 后的转义写法是否正确，例如 `\\n`、`\\t`、`\\"`。'
+            },
+            {
+                test: /Maximum call stack size exceeded/i,
+                summary: 'JSON 结构过深，处理失败',
+                hint: '文档层级过深或体积过大，可尝试压缩、拆分数据，或使用大文档模式下的压缩功能。'
             }
         ];
 
@@ -253,14 +265,79 @@ const JsonUtils = (function () {
 
     function sortKeys(value) {
         if (value === null || typeof value !== 'object') return value;
-        if (Array.isArray(value)) {
-            return value.map(sortKeys);
+
+        const root = Array.isArray(value) ? [] : {};
+        const queue = [{ src: value, dst: root }];
+
+        while (queue.length) {
+            const { src, dst } = queue.shift();
+            if (Array.isArray(src)) {
+                dst.length = src.length;
+                for (let i = 0; i < src.length; i++) {
+                    const child = src[i];
+                    if (child !== null && typeof child === 'object') {
+                        const childDst = Array.isArray(child) ? [] : {};
+                        dst[i] = childDst;
+                        queue.push({ src: child, dst: childDst });
+                    } else {
+                        dst[i] = child;
+                    }
+                }
+                continue;
+            }
+
+            for (const key of Object.keys(src).sort()) {
+                const child = src[key];
+                if (child !== null && typeof child === 'object') {
+                    const childDst = Array.isArray(child) ? [] : {};
+                    dst[key] = childDst;
+                    queue.push({ src: child, dst: childDst });
+                } else {
+                    dst[key] = child;
+                }
+            }
         }
-        const sorted = {};
-        Object.keys(value).sort().forEach((key) => {
-            sorted[key] = sortKeys(value[key]);
-        });
-        return sorted;
+
+        return root;
+    }
+
+    function getMaxLineLength(text, scanLimit = 600000) {
+        let maxLine = 0;
+        let lineLen = 0;
+        const limit = Math.min(text.length, scanLimit);
+
+        for (let i = 0; i < limit; i++) {
+            if (text.charCodeAt(i) === 10) {
+                if (lineLen > maxLine) maxLine = lineLen;
+                lineLen = 0;
+            } else {
+                lineLen++;
+            }
+        }
+
+        if (lineLen > maxLine) maxLine = lineLen;
+        return maxLine;
+    }
+
+    function getDocumentProfile(text) {
+        const charCount = text.length;
+        const maxLineLength = charCount > 0 ? getMaxLineLength(text) : 0;
+        const isLarge = charCount >= THRESHOLDS.LARGE_CHARS
+            || maxLineLength >= THRESHOLDS.LONG_LINE_CHARS;
+        const useWorker = charCount >= THRESHOLDS.WORKER_CHARS;
+
+        return {
+            charCount,
+            maxLineLength,
+            isLarge,
+            useWorker,
+            disableHints: isLarge,
+            disableValueInteraction: isLarge
+        };
+    }
+
+    function shouldUsePlainTextMode(text) {
+        return getDocumentProfile(text).isLarge;
     }
 
     function normalizeForCompare(textA, textB, opts = {}) {
@@ -292,6 +369,7 @@ const JsonUtils = (function () {
     }
 
     return {
+        THRESHOLDS,
         parse,
         format,
         formatCanonical,
@@ -300,6 +378,9 @@ const JsonUtils = (function () {
         normalizeForCompare,
         getIndentOptions,
         getIndentString,
+        getMaxLineLength,
+        getDocumentProfile,
+        shouldUsePlainTextMode,
         buildErrorReport,
         humanizeError,
         getErrorContext,
@@ -307,3 +388,10 @@ const JsonUtils = (function () {
         tryParseEmbeddedJson
     };
 })();
+
+if (typeof self !== 'undefined') {
+    self.JsonUtils = JsonUtils;
+}
+if (typeof window !== 'undefined') {
+    window.JsonUtils = JsonUtils;
+}

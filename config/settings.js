@@ -13,7 +13,6 @@ const Settings = {
         autoFormat: 'always',  // 'always', 'paste', 'never'
         formatIndent: 4,       // 2, 4, or 'tab'
         lastMode: 'converter',  // 'converter', 'diff', 'markdown', 'json', 'toolbox'
-        jsonCompareMode: 'structural', // 'structural' | 'sideBySide'
         jsonSortKeysOnCompare: true,
         jsonSubView: 'format', // 'format' | 'compare'
         jsonAutoFormat: true,

@@ -104,8 +104,8 @@ const DiffLines = (function () {
                 if (row.lineB != null) statusB[row.lineB - 1] = 'add';
             } else if (row.type === 'modify') {
                 modified++;
-                if (row.lineA != null) statusA[row.lineA - 1] = 'del';
-                if (row.lineB != null) statusB[row.lineB - 1] = 'add';
+                if (row.lineA != null) statusA[row.lineA - 1] = 'mod';
+                if (row.lineB != null) statusB[row.lineB - 1] = 'mod';
             }
         }
 
@@ -126,7 +126,7 @@ const DiffLines = (function () {
         const backdropHtml = [];
         for (let i = 0; i < lineCount; i++) {
             const state = status[i] || 'equal';
-            const cls = state !== 'equal' ? ' ' + state : '';
+            const cls = state !== 'equal' ? ` ${state}` : '';
             gutterHtml.push(`<div class="cdiff-gutter-line${cls}">${i + 1}</div>`);
             backdropHtml.push(`<div class="cdiff-backdrop-line${cls}"></div>`);
         }
@@ -140,7 +140,7 @@ const DiffLines = (function () {
         for (let i = 0; i < status.length; i++) {
             if (status[i] !== 'equal') {
                 if (!inHunk) {
-                    hunks.push({ line: i, side });
+                    hunks.push({ line: i, side, kind: status[i] });
                     inHunk = true;
                 }
             } else {

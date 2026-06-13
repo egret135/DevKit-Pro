@@ -7,15 +7,17 @@
 
     let ctx = null;
     let currentSubView = 'format';
-    let currentCompareMode = 'structural';
     let debouncedCompare = null;
     let structuralHunks = [];
     let structuralHunkIdx = -1;
-    let sideBySideHunks = [];
-    let sideBySideHunkIdx = -1;
+    let isCompareUpdating = false;
     let debouncedAutoFormat = null;
     let debouncedAutoValidate = null;
     let isAutoFormatting = false;
+    let formatInProgress = false;
+    let formatTaskId = 0;
+    let formatPipelineTimer = null;
+    let hintsRefreshHandle = null;
     let inputErrorMark = null;
     let inputErrorLineMark = null;
 
@@ -29,11 +31,6 @@
         initFormatView();
         initCompareView();
 
-        const savedCompareMode = ctx.getSettings().jsonCompareMode;
-        if (savedCompareMode === 'sideBySide') {
-            switchCompareMode('sideBySide');
-        }
-
         const savedSubView = ctx.getSettings().jsonSubView;
         if (savedSubView === 'compare') {
             switchSubView('compare');
@@ -45,10 +42,94 @@
     }
 
     function getFormatOptions() {
+        const profile = JsonUtils.getDocumentProfile(getFormatInput());
         return {
             indent: getIndentSetting(),
-            expandEscapedStrings: isExpandEscapedEnabled()
+            expandEscapedStrings: !profile.isLarge && isExpandEscapedEnabled()
         };
+    }
+
+    function getAdaptiveDebounceMs(text) {
+        const profile = JsonUtils.getDocumentProfile(text);
+        if (profile.useWorker) return 1200;
+        if (profile.isLarge) return 800;
+        return 400;
+    }
+
+    function updateEditorPerformanceModes() {
+        const inputText = getFormatInput();
+        const outputText = getFormatOutput();
+        editorManager.setPerformanceMode('jsonFormatInput', JsonUtils.shouldUsePlainTextMode(inputText));
+        editorManager.setPerformanceMode('jsonFormatOutput', JsonUtils.shouldUsePlainTextMode(outputText));
+    }
+
+    function cancelDeferredHintsRefresh() {
+        if (!hintsRefreshHandle) return;
+        if (typeof cancelIdleCallback !== 'undefined') {
+            cancelIdleCallback(hintsRefreshHandle);
+        } else {
+            clearTimeout(hintsRefreshHandle);
+        }
+        hintsRefreshHandle = null;
+    }
+
+    function deferRefreshFormatOutputHints(formatted) {
+        cancelDeferredHintsRefresh();
+
+        const profile = JsonUtils.getDocumentProfile(formatted || '');
+        if (profile.disableHints) {
+            refreshFormatOutputHints(formatted || '');
+            return;
+        }
+
+        const run = () => {
+            hintsRefreshHandle = null;
+            refreshFormatOutputHints(formatted || '');
+        };
+
+        if (typeof requestIdleCallback !== 'undefined') {
+            hintsRefreshHandle = requestIdleCallback(run, { timeout: 1500 });
+        } else {
+            hintsRefreshHandle = setTimeout(run, 60);
+        }
+    }
+
+    function formatInputText(text) {
+        const options = getFormatOptions();
+        if (typeof JsonWorkerClient !== 'undefined' && JsonWorkerClient.shouldUseWorker(text)) {
+            return JsonWorkerClient.format(text, options);
+        }
+        return Promise.resolve(formatForOutput(text));
+    }
+
+    function minifyInputText(text) {
+        if (typeof JsonWorkerClient !== 'undefined' && JsonWorkerClient.shouldUseWorker(text)) {
+            return JsonWorkerClient.minify(text);
+        }
+        return Promise.resolve(JsonUtils.minify(text));
+    }
+
+    function sortInputText(text) {
+        const options = getFormatOptions();
+        if (typeof JsonWorkerClient !== 'undefined' && JsonWorkerClient.shouldUseWorker(text)) {
+            return JsonWorkerClient.sortAndFormat(text, options);
+        }
+        const parsed = JsonUtils.parse(text);
+        if (!parsed.ok) throw new Error(parsed.error);
+        return Promise.resolve(formatForOutput(JsonUtils.sortKeys(parsed.value)));
+    }
+
+    function scheduleFormatPipeline() {
+        const text = getFormatInput();
+        const wait = getAdaptiveDebounceMs(text);
+        updateEditorPerformanceModes();
+        clearTimeout(formatPipelineTimer);
+        formatPipelineTimer = setTimeout(() => {
+            runAutoValidate();
+            if (isAutoFormatEnabled()) {
+                runAutoFormat();
+            }
+        }, wait);
     }
 
     function isExpandEscapedEnabled() {
@@ -72,10 +153,20 @@
         const parsed = JsonUtils.parse(text);
         if (!parsed.ok) return;
 
-        const outputEditor = editorManager.get('jsonFormatOutput');
-        const scroll = outputEditor?.getScrollInfo();
-        setFormatOutput(formatForOutput(parsed.value));
-        restoreEditorScroll('jsonFormatOutput', scroll);
+        const taskId = ++formatTaskId;
+        formatInProgress = true;
+        updateFormatMeta();
+
+        formatInputText(text)
+            .then((formatted) => {
+                if (taskId !== formatTaskId) return;
+                setFormatOutput(formatted);
+            })
+            .finally(() => {
+                if (taskId !== formatTaskId) return;
+                formatInProgress = false;
+                updateFormatMeta();
+            });
     }
 
     function getFormatInput() {
@@ -93,9 +184,13 @@
 
     function setFormatOutput(value) {
         hideFormatError();
+        const outputEditor = editorManager.get('jsonFormatOutput');
+        const scroll = outputEditor?.getScrollInfo();
         editorManager.setValue('jsonFormatOutput', value || '');
         updateFormatMeta();
-        refreshFormatOutputHints(value || '');
+        updateEditorPerformanceModes();
+        deferRefreshFormatOutputHints(value || '');
+        restoreEditorScroll('jsonFormatOutput', scroll);
     }
 
     function clearInputErrorMarks() {
@@ -310,9 +405,24 @@
     function updateFormatMeta() {
         const metaEl = document.getElementById('jsonFormatMeta');
         if (!metaEl) return;
-        const inputLines = getFormatInput() ? getFormatInput().split('\n').length : 0;
-        const outputLines = getFormatOutput() ? getFormatOutput().split('\n').length : 0;
-        metaEl.textContent = `输入 ${inputLines} 行 · 输出 ${outputLines} 行`;
+
+        const inputText = getFormatInput();
+        const outputText = getFormatOutput();
+        const inputLines = inputText ? inputText.split('\n').length : 0;
+        const outputLines = outputText ? outputText.split('\n').length : 0;
+        const profile = JsonUtils.getDocumentProfile(inputText);
+        let meta = `输入 ${inputLines} 行 · 输出 ${outputLines} 行`;
+
+        if (profile.charCount > 0) {
+            const sizeLabel = profile.charCount < 1024 * 1024
+                ? `${(profile.charCount / 1024).toFixed(1)} KB`
+                : `${(profile.charCount / (1024 * 1024)).toFixed(2)} MB`;
+            meta += ` · ${sizeLabel}`;
+            if (profile.isLarge) meta += ' · 大文档模式';
+            if (formatInProgress) meta += ' · 处理中…';
+        }
+
+        metaEl.textContent = meta;
     }
 
     function initSubNav() {
@@ -349,25 +459,14 @@
     }
 
     function initFormatView() {
-        debouncedAutoFormat = ctx.debounce(runAutoFormat, 400);
-        debouncedAutoValidate = ctx.debounce(runAutoValidate, 300);
-
         configureJsonEditorFolding('jsonFormatInput');
         configureJsonEditorFolding('jsonFormatOutput');
+        updateEditorPerformanceModes();
 
         const formatEditor = editorManager.get('jsonFormatInput');
         formatEditor?.on('change', () => {
             updateFormatMeta();
-            debouncedAutoValidate();
-            if (isAutoFormatEnabled()) {
-                debouncedAutoFormat();
-            }
-        });
-        formatEditor?.on('paste', () => {
-            setTimeout(() => {
-                runAutoValidate();
-                if (isAutoFormatEnabled()) runAutoFormat();
-            }, 50);
+            scheduleFormatPipeline();
         });
 
         const autoFormatCheckbox = document.getElementById('jsonAutoFormat');
@@ -446,7 +545,7 @@
     }
 
     function runAutoValidate() {
-        if (isAutoFormatting) return;
+        if (isAutoFormatting || formatInProgress) return;
 
         const text = getFormatInput();
         if (!text.trim()) {
@@ -474,7 +573,7 @@
     }
 
     function runAutoFormat() {
-        if (isAutoFormatting || !isAutoFormatEnabled()) return;
+        if (isAutoFormatting || formatInProgress || !isAutoFormatEnabled()) return;
 
         const text = getFormatInput();
         if (!text.trim()) {
@@ -491,19 +590,32 @@
             return;
         }
 
-        try {
-            isAutoFormatting = true;
-            const formatted = formatForOutput(text);
-            if (formatted !== getFormatOutput()) {
-                setFormatOutput(formatted);
-            } else {
-                refreshFormatOutputHints(formatted);
-            }
-        } catch (_) {
-            // ignore while typing incomplete JSON
-        } finally {
-            isAutoFormatting = false;
-        }
+        const taskId = ++formatTaskId;
+        formatInProgress = true;
+        isAutoFormatting = true;
+        updateFormatMeta();
+
+        formatInputText(text)
+            .then((formatted) => {
+                if (taskId !== formatTaskId) return;
+
+                if (formatted !== getFormatOutput()) {
+                    setFormatOutput(formatted);
+                } else {
+                    deferRefreshFormatOutputHints(formatted);
+                }
+                hideFormatError();
+            })
+            .catch(() => {
+                // ignore while typing incomplete JSON
+            })
+            .finally(() => {
+                if (taskId !== formatTaskId) return;
+                formatInProgress = false;
+                isAutoFormatting = false;
+                updateFormatMeta();
+                runAutoValidate();
+            });
     }
 
     function handleFormat() {
@@ -512,19 +624,36 @@
             ctx.setStatus('请输入 JSON', 'error');
             return;
         }
-        try {
-            const formatted = formatForOutput(text);
-            setFormatOutput(formatted);
-            ctx.setStatus('JSON 已格式化', 'success');
-        } catch (e) {
-            const parsed = JsonUtils.parse(text);
-            if (!parsed.ok) {
-                showFormatError(text, parsed);
-            }
-            editorManager.setValue('jsonFormatOutput', '');
-            refreshFormatOutputHints('');
-            ctx.setStatus(`格式化失败: ${e.message}`, 'error');
+
+        const parsed = JsonUtils.parse(text);
+        if (!parsed.ok) {
+            showFormatError(text, parsed);
+            ctx.setStatus(`格式化失败: ${parsed.error}`, 'error');
+            return;
         }
+
+        const taskId = ++formatTaskId;
+        formatInProgress = true;
+        ctx.setStatus('正在格式化...', 'processing');
+        updateFormatMeta();
+
+        formatInputText(text)
+            .then((formatted) => {
+                if (taskId !== formatTaskId) return;
+                setFormatOutput(formatted);
+                ctx.setStatus('JSON 已格式化', 'success');
+            })
+            .catch((e) => {
+                if (taskId !== formatTaskId) return;
+                editorManager.setValue('jsonFormatOutput', '');
+                refreshFormatOutputHints('');
+                ctx.setStatus(`格式化失败: ${e.message}`, 'error');
+            })
+            .finally(() => {
+                if (taskId !== formatTaskId) return;
+                formatInProgress = false;
+                updateFormatMeta();
+            });
     }
 
     function handleMinify() {
@@ -533,16 +662,36 @@
             ctx.setStatus('请输入 JSON', 'error');
             return;
         }
-        try {
-            setFormatOutput(JsonUtils.minify(text));
-            ctx.setStatus('JSON 已压缩', 'success');
-        } catch (e) {
-            const parsed = JsonUtils.parse(text);
-            if (!parsed.ok) showFormatError(text, parsed);
-            editorManager.setValue('jsonFormatOutput', '');
-            refreshFormatOutputHints('');
-            ctx.setStatus(`压缩失败: ${e.message}`, 'error');
+
+        const parsed = JsonUtils.parse(text);
+        if (!parsed.ok) {
+            showFormatError(text, parsed);
+            ctx.setStatus(`压缩失败: ${parsed.error}`, 'error');
+            return;
         }
+
+        const taskId = ++formatTaskId;
+        formatInProgress = true;
+        ctx.setStatus('正在压缩...', 'processing');
+        updateFormatMeta();
+
+        minifyInputText(text)
+            .then((minified) => {
+                if (taskId !== formatTaskId) return;
+                setFormatOutput(minified);
+                ctx.setStatus('JSON 已压缩', 'success');
+            })
+            .catch((e) => {
+                if (taskId !== formatTaskId) return;
+                editorManager.setValue('jsonFormatOutput', '');
+                refreshFormatOutputHints('');
+                ctx.setStatus(`压缩失败: ${e.message}`, 'error');
+            })
+            .finally(() => {
+                if (taskId !== formatTaskId) return;
+                formatInProgress = false;
+                updateFormatMeta();
+            });
     }
 
     function handleSortKeys() {
@@ -551,15 +700,34 @@
             ctx.setStatus('请输入 JSON', 'error');
             return;
         }
+
         const parsed = JsonUtils.parse(text);
         if (!parsed.ok) {
             showFormatError(text, parsed);
             ctx.setStatus(`排序失败: ${parsed.error}`, 'error');
             return;
         }
-        const sorted = JsonUtils.sortKeys(parsed.value);
-        setFormatOutput(formatForOutput(sorted));
-        ctx.setStatus('Key 已排序并格式化', 'success');
+
+        const taskId = ++formatTaskId;
+        formatInProgress = true;
+        ctx.setStatus('正在排序...', 'processing');
+        updateFormatMeta();
+
+        sortInputText(text)
+            .then((sorted) => {
+                if (taskId !== formatTaskId) return;
+                setFormatOutput(sorted);
+                ctx.setStatus('Key 已排序并格式化', 'success');
+            })
+            .catch((e) => {
+                if (taskId !== formatTaskId) return;
+                ctx.setStatus(`排序失败: ${e.message}`, 'error');
+            })
+            .finally(() => {
+                if (taskId !== formatTaskId) return;
+                formatInProgress = false;
+                updateFormatMeta();
+            });
     }
 
     function getSyncableOutputText() {
@@ -622,11 +790,17 @@
     function initCompareView() {
         const editorA = editorManager.get('jsonCompareA');
         const editorB = editorManager.get('jsonCompareB');
-        editorA?.on('change', debouncedCompare);
-        editorB?.on('change', debouncedCompare);
 
-        document.getElementById('jsonCompareModeStructural')?.addEventListener('click', () => switchCompareMode('structural'));
-        document.getElementById('jsonCompareModeSideBySide')?.addEventListener('click', () => switchCompareMode('sideBySide'));
+        editorA?.on('change', () => {
+            if (!isCompareUpdating) debouncedCompare();
+        });
+        editorB?.on('change', () => {
+            if (!isCompareUpdating) debouncedCompare();
+        });
+
+        if (typeof JsonCmDiff !== 'undefined') {
+            JsonCmDiff.linkScrollPair(editorA, editorB, 'jsonCompareGutterA', 'jsonCompareGutterB');
+        }
 
         document.getElementById('jsonCompareBtn')?.addEventListener('click', handleCompare);
         document.getElementById('jsonCompareSwapBtn')?.addEventListener('click', handleSwap);
@@ -638,16 +812,8 @@
             handleCompare();
         });
 
-        document.getElementById('jsonSideIgnoreWhitespace')?.addEventListener('change', handleCompare);
-
         document.getElementById('jsonStructuralPrevBtn')?.addEventListener('click', () => navigateStructural(-1));
         document.getElementById('jsonStructuralNextBtn')?.addEventListener('click', () => navigateStructural(1));
-
-        document.getElementById('jsonSidePrevBtn')?.addEventListener('click', () => navigateSideBySide(-1));
-        document.getElementById('jsonSideNextBtn')?.addEventListener('click', () => navigateSideBySide(1));
-
-        setupPaneScroll('jsonSideDiffA', 'jsonSideGutterA', 'jsonSideBackdropA');
-        setupPaneScroll('jsonSideDiffB', 'jsonSideGutterB', 'jsonSideBackdropB');
 
         const fsBtn = document.getElementById('jsonCompareFullscreenBtn');
         const panel = document.getElementById('jsonCompareView');
@@ -670,112 +836,33 @@
         if (sortCheckbox) {
             sortCheckbox.checked = ctx.getSettings().jsonSortKeysOnCompare !== false;
         }
-
-        const compareView = document.getElementById('jsonCompareView');
-        if (compareView) {
-            compareView.classList.add('json-mode-structural');
-        }
     }
 
-    function switchCompareMode(mode) {
-        currentCompareMode = mode;
-        ctx.getSettings().jsonCompareMode = mode;
-        Settings.save(ctx.getSettings());
+    function clearCompareEditorDiff() {
+        const editorA = editorManager.get('jsonCompareA');
+        const editorB = editorManager.get('jsonCompareB');
 
-        document.getElementById('jsonCompareModeStructural')?.classList.toggle('active', mode === 'structural');
-        document.getElementById('jsonCompareModeSideBySide')?.classList.toggle('active', mode === 'sideBySide');
-        document.getElementById('jsonStructuralCompare')?.classList.toggle('hidden', mode !== 'structural');
-        document.getElementById('jsonSideBySideCompare')?.classList.toggle('hidden', mode !== 'sideBySide');
-
-        const compareView = document.getElementById('jsonCompareView');
-        if (compareView) {
-            compareView.classList.toggle('json-mode-structural', mode === 'structural');
-            compareView.classList.toggle('json-mode-side-by-side', mode === 'sideBySide');
+        if (typeof JsonCmDiff !== 'undefined') {
+            JsonCmDiff.clearEditor(editorA);
+            JsonCmDiff.clearEditor(editorB);
+            JsonCmDiff.clearGutter('jsonCompareGutterA');
+            JsonCmDiff.clearGutter('jsonCompareGutterB');
         }
 
-        handleCompare();
-    }
-
-    function getCompareTexts() {
-        return {
-            a: editorManager.getValue('jsonCompareA'),
-            b: editorManager.getValue('jsonCompareB')
-        };
-    }
-
-    function handleCompare() {
-        if (currentSubView !== 'compare') return;
-
-        const { a, b } = getCompareTexts();
-        if (currentCompareMode === 'structural') {
-            runStructuralCompare(a, b);
-        } else {
-            runSideBySideCompare(a, b);
-        }
-    }
-
-    function runStructuralCompare(textA, textB) {
-        const resultEl = document.getElementById('jsonStructuralResult');
-        const statsEl = document.getElementById('jsonStructuralStats');
-        if (!resultEl) return;
-
-        if (!textA.trim() && !textB.trim()) {
-            resultEl.innerHTML = '<span class="diff-unchanged">输入 JSON A 和 JSON B 开始对比</span>';
-            if (statsEl) statsEl.textContent = '';
-            structuralHunks = [];
-            structuralHunkIdx = -1;
-            updateStructuralNavPos();
-            return;
-        }
-
-        const sortKeys = document.getElementById('jsonSortKeysOnCompare')?.checked !== false;
-        const result = jsonDiffEngine.diffFromText(textA, textB, { sortKeys });
-
-        if (!result.ok) {
-            resultEl.innerHTML = `<span class="diff-removed">${escapeHtml(result.error)}</span>`;
-            if (statsEl) statsEl.textContent = '';
-            structuralHunks = [];
-            structuralHunkIdx = -1;
-            updateStructuralNavPos();
-            ctx.setStatus('JSON 对比失败', 'error');
-            return;
-        }
-
-        const { stats, lines } = result;
-        if (statsEl) {
-            statsEl.innerHTML =
-                `<span class="cdiff-stat-add">+${stats.added}</span> ` +
-                `<span class="cdiff-stat-rm">-${stats.removed}</span> ` +
-                `<span class="cdiff-stat-mod">~${stats.changed}</span>`;
-        }
-
-        if (lines.length === 0) {
-            resultEl.innerHTML = '<span class="diff-unchanged">两个 JSON 完全相同</span>';
-        } else {
-            resultEl.innerHTML = lines.join('\n');
-        }
-
-        structuralHunks = lines.map((_, idx) => idx);
+        structuralHunks = [];
         structuralHunkIdx = -1;
         updateStructuralNavPos();
-        ctx.setStatus('JSON 对比完成', 'success');
     }
 
-    function runSideBySideCompare(textA, textB) {
-        const errorEl = document.getElementById('jsonSideError');
-        const statsEl = document.getElementById('jsonSideStats');
-        const textareaA = document.getElementById('jsonSideDiffA');
-        const textareaB = document.getElementById('jsonSideDiffB');
-
-        if (!textareaA || !textareaB) return;
+    function applyInlineEditorDiff(textA, textB) {
+        const errorEl = document.getElementById('jsonCompareError');
+        const editorA = editorManager.get('jsonCompareA');
+        const editorB = editorManager.get('jsonCompareB');
 
         if (!textA.trim() && !textB.trim()) {
-            textareaA.value = '';
-            textareaB.value = '';
-            clearSideBySideOverlays();
+            clearCompareEditorDiff();
             if (errorEl) errorEl.textContent = '';
-            if (statsEl) statsEl.textContent = '';
-            return;
+            return { ok: true, empty: true };
         }
 
         const sortKeys = document.getElementById('jsonSortKeysOnCompare')?.checked !== false;
@@ -789,58 +876,105 @@
                 ? `JSON A 解析错误: ${normalized.errorA}`
                 : `JSON B 解析错误: ${normalized.errorB}`;
             if (errorEl) errorEl.textContent = msg;
-            textareaA.value = '';
-            textareaB.value = '';
-            clearSideBySideOverlays();
+            clearCompareEditorDiff();
+            return { ok: false, error: msg };
+        }
+
+        if (errorEl) errorEl.textContent = '';
+
+        isCompareUpdating = true;
+        editorManager.setValue('jsonCompareA', normalized.textA);
+        editorManager.setValue('jsonCompareB', normalized.textB);
+        isCompareUpdating = false;
+
+        const linesA = normalized.textA.split('\n');
+        const linesB = normalized.textB.split('\n');
+        const lineDiff = DiffLines.computeLineDiff(linesA, linesB);
+
+        if (typeof JsonCmDiff !== 'undefined') {
+            JsonCmDiff.applyLineStatus(editorA, lineDiff.statusA);
+            JsonCmDiff.applyLineStatus(editorB, lineDiff.statusB);
+
+            const lineHeight = JsonCmDiff.getLineHeight(editorA);
+            JsonCmDiff.renderGutter('jsonCompareGutterA', linesA.length, lineDiff.statusA, lineHeight);
+            JsonCmDiff.renderGutter('jsonCompareGutterB', linesB.length, lineDiff.statusB, lineHeight);
+        }
+
+        return { ok: true, lineDiff, normalized };
+    }
+
+    function getCompareTexts() {
+        return {
+            a: editorManager.getValue('jsonCompareA'),
+            b: editorManager.getValue('jsonCompareB')
+        };
+    }
+
+    function handleCompare() {
+        if (currentSubView !== 'compare') return;
+
+        const { a, b } = getCompareTexts();
+        runCompare(a, b);
+    }
+
+    function runCompare(textA, textB) {
+        const statsEl = document.getElementById('jsonStructuralStats');
+        const editorA = editorManager.get('jsonCompareA');
+        const editorB = editorManager.get('jsonCompareB');
+
+        if (!textA.trim() && !textB.trim()) {
+            clearCompareEditorDiff();
+            if (statsEl) statsEl.textContent = '';
+            return;
+        }
+
+        const inline = applyInlineEditorDiff(textA, textB);
+        if (!inline.ok) {
+            if (statsEl) statsEl.textContent = '';
+            structuralHunks = [];
+            structuralHunkIdx = -1;
+            updateStructuralNavPos();
             ctx.setStatus('JSON 对比失败', 'error');
             return;
         }
 
-        if (errorEl) errorEl.textContent = '';
-        textareaA.value = normalized.textA;
-        textareaB.value = normalized.textB;
-
-        const ignoreWhitespace = document.getElementById('jsonSideIgnoreWhitespace')?.checked || false;
-        const lineDiff = DiffLines.computeLineDiff(
-            normalized.textA.split('\n'),
-            normalized.textB.split('\n'),
-            { ignoreWhitespace }
-        );
-
-        DiffLines.renderOverlay(
-            'jsonSideGutterA',
-            'jsonSideBackdropA',
-            normalized.textA.split('\n').length,
-            lineDiff.statusA
-        );
-        DiffLines.renderOverlay(
-            'jsonSideGutterB',
-            'jsonSideBackdropB',
-            normalized.textB.split('\n').length,
-            lineDiff.statusB
-        );
-
-        if (statsEl) {
-            statsEl.innerHTML = DiffLines.formatStatsHtml(lineDiff.stats);
+        if (inline.empty) {
+            if (statsEl) statsEl.textContent = '';
+            return;
         }
 
-        sideBySideHunks = DiffLines.mergeHunks(
-            DiffLines.buildHunks(lineDiff.statusA, 'a'),
-            DiffLines.buildHunks(lineDiff.statusB, 'b')
-        );
-        sideBySideHunkIdx = -1;
-        updateSideNavPos();
-        ctx.setStatus('JSON 并排对比完成', 'success');
-    }
+        const sortKeys = document.getElementById('jsonSortKeysOnCompare')?.checked !== false;
+        const result = jsonDiffEngine.diffFromText(textA, textB, { sortKeys });
 
-    function clearSideBySideOverlays() {
-        ['jsonSideGutterA', 'jsonSideGutterB', 'jsonSideBackdropA', 'jsonSideBackdropB'].forEach((id) => {
-            const el = document.getElementById(id);
-            if (el) el.innerHTML = '';
-        });
-        sideBySideHunks = [];
-        sideBySideHunkIdx = -1;
-        updateSideNavPos();
+        if (!result.ok) {
+            if (statsEl) statsEl.textContent = '';
+            structuralHunks = [];
+            structuralHunkIdx = -1;
+            updateStructuralNavPos();
+            ctx.setStatus('JSON 对比失败', 'error');
+            return;
+        }
+
+        const { stats, changes } = result;
+        if (statsEl) {
+            statsEl.innerHTML =
+                `<span class="cdiff-stat-add">+${stats.added}</span> ` +
+                `<span class="cdiff-stat-rm">-${stats.removed}</span> ` +
+                `<span class="cdiff-stat-mod">~${stats.changed}</span>`;
+        }
+
+        structuralHunks = changes.map((change) => ({
+            path: change.path,
+            lineA: typeof JsonCmDiff !== 'undefined'
+                ? JsonCmDiff.findLineForPath(editorA, change.path)
+                : 0,
+            lineB: typeof JsonCmDiff !== 'undefined'
+                ? JsonCmDiff.findLineForPath(editorB, change.path)
+                : 0
+        }));
+        structuralHunkIdx = -1;
+        updateStructuralNavPos();
+        ctx.setStatus(changes.length === 0 ? '两个 JSON 完全相同' : 'JSON 对比完成', 'success');
     }
 
     function handleSwap() {
@@ -865,61 +999,30 @@
         if (structuralHunkIdx >= structuralHunks.length) structuralHunkIdx = 0;
         updateStructuralNavPos();
 
-        const resultEl = document.getElementById('jsonStructuralResult');
-        const lineEl = resultEl?.children[structuralHunks[structuralHunkIdx]];
-        if (lineEl) {
-            lineEl.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
-            lineEl.classList.add('diff-highlight');
-            setTimeout(() => lineEl.classList.remove('diff-highlight'), 1200);
+        const hunk = structuralHunks[structuralHunkIdx];
+        const editorA = editorManager.get('jsonCompareA');
+        const editorB = editorManager.get('jsonCompareB');
+
+        if (typeof JsonCmDiff !== 'undefined') {
+            JsonCmDiff.scrollEditorToLine(editorA, hunk.lineA);
+            JsonCmDiff.scrollEditorToLine(editorB, hunk.lineB);
+            if (editorB) {
+                editorB.scrollTo(editorA.getScrollInfo().left, editorA.getScrollInfo().top);
+            }
         }
     }
 
     function updateStructuralNavPos() {
         const posEl = document.getElementById('jsonStructuralNavPos');
         if (posEl) {
-            posEl.textContent = structuralHunks.length > 0
-                ? `${structuralHunkIdx + 1}/${structuralHunks.length}`
-                : '';
+            if (structuralHunks.length === 0) {
+                posEl.textContent = '';
+            } else if (structuralHunkIdx >= 0) {
+                posEl.textContent = `${structuralHunkIdx + 1}/${structuralHunks.length}`;
+            } else {
+                posEl.textContent = `${structuralHunks.length} 处`;
+            }
         }
-    }
-
-    function navigateSideBySide(direction) {
-        if (sideBySideHunks.length === 0) return;
-        sideBySideHunkIdx += direction;
-        if (sideBySideHunkIdx < 0) sideBySideHunkIdx = sideBySideHunks.length - 1;
-        if (sideBySideHunkIdx >= sideBySideHunks.length) sideBySideHunkIdx = 0;
-        updateSideNavPos();
-
-        const hunk = sideBySideHunks[sideBySideHunkIdx];
-        const lineHeight = 20;
-        const textarea = document.getElementById(hunk.side === 'a' ? 'jsonSideDiffA' : 'jsonSideDiffB');
-        if (!textarea) return;
-
-        textarea.scrollTop = Math.max(0, hunk.line * lineHeight - textarea.clientHeight / 3);
-        const other = document.getElementById(hunk.side === 'a' ? 'jsonSideDiffB' : 'jsonSideDiffA');
-        if (other) other.scrollTop = textarea.scrollTop;
-        textarea.dispatchEvent(new Event('scroll'));
-        other?.dispatchEvent(new Event('scroll'));
-    }
-
-    function updateSideNavPos() {
-        const posEl = document.getElementById('jsonSideNavPos');
-        if (posEl) {
-            posEl.textContent = sideBySideHunks.length > 0
-                ? `${sideBySideHunkIdx + 1}/${sideBySideHunks.length}`
-                : '';
-        }
-    }
-
-    function setupPaneScroll(textareaId, gutterId, backdropId) {
-        const textarea = document.getElementById(textareaId);
-        const gutter = document.getElementById(gutterId);
-        const backdrop = document.getElementById(backdropId);
-        if (!textarea) return;
-        textarea.addEventListener('scroll', () => {
-            if (gutter) gutter.scrollTop = textarea.scrollTop;
-            if (backdrop) backdrop.scrollTop = textarea.scrollTop;
-        });
     }
 
     function escapeHtml(text) {
@@ -942,7 +1045,6 @@
     DevKit.JsonController = {
         init,
         switchSubView,
-        switchCompareMode,
         loadContent,
         handleFormat,
         handleCompare

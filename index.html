@@ -386,21 +386,13 @@
                 <div id="jsonCompareView" class="json-sub-view hidden">
                     <div class="json-compare-toolbar cdiff-toolbar">
                         <div class="cdiff-toolbar-left">
-                            <div class="json-compare-mode-switch">
-                                <button id="jsonCompareModeStructural" class="json-mode-btn active">结构化</button>
-                                <button id="jsonCompareModeSideBySide" class="json-mode-btn">并排</button>
-                            </div>
                             <label class="code-diff-option">
                                 <input type="checkbox" id="jsonSortKeysOnCompare" checked>
                                 <span>排序 Key 后对比</span>
                             </label>
-                            <label class="code-diff-option json-side-only">
-                                <input type="checkbox" id="jsonSideIgnoreWhitespace">
-                                <span>忽略空白</span>
-                            </label>
                             <span id="jsonStructuralStats" class="json-structural-stats"></span>
-                            <span id="jsonSideStats" class="code-diff-stats json-side-only"></span>
-                            <span class="cdiff-nav json-structural-only">
+                            <span id="jsonCompareError" class="json-compare-error"></span>
+                            <span class="cdiff-nav">
                                 <button id="jsonStructuralPrevBtn" class="cdiff-nav-btn" title="上一个差异">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                                         <path d="M18 15l-6-6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
@@ -408,19 +400,6 @@
                                 </button>
                                 <span id="jsonStructuralNavPos" class="cdiff-nav-pos"></span>
                                 <button id="jsonStructuralNextBtn" class="cdiff-nav-btn" title="下一个差异">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                        <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                    </svg>
-                                </button>
-                            </span>
-                            <span class="cdiff-nav json-side-only">
-                                <button id="jsonSidePrevBtn" class="cdiff-nav-btn" title="上一个差异">
-                                    <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
-                                        <path d="M18 15l-6-6-6 6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
-                                    </svg>
-                                </button>
-                                <span id="jsonSideNavPos" class="cdiff-nav-pos"></span>
-                                <button id="jsonSideNextBtn" class="cdiff-nav-btn" title="下一个差异">
                                     <svg width="14" height="14" viewBox="0 0 24 24" fill="none">
                                         <path d="M6 9l6 6 6-6" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>
                                     </svg>
@@ -448,40 +427,19 @@
                     <div class="json-compare-inputs">
                         <div class="json-diff-col">
                             <span class="tool-label">JSON A (基准)</span>
-                            <textarea id="jsonCompareA" class="editor" placeholder='{"key": "value"}' spellcheck="false"></textarea>
+                            <div class="json-cm-diff-shell">
+                                <div class="json-cm-gutter cdiff-gutter" id="jsonCompareGutterA"></div>
+                                <div class="json-cm-diff-body">
+                                    <textarea id="jsonCompareA" class="editor" placeholder='{"key": "value"}' spellcheck="false"></textarea>
+                                </div>
+                            </div>
                         </div>
                         <div class="json-diff-col">
                             <span class="tool-label">JSON B (对比)</span>
-                            <textarea id="jsonCompareB" class="editor" placeholder='{"key": "newValue"}' spellcheck="false"></textarea>
-                        </div>
-                    </div>
-
-                    <div id="jsonStructuralCompare" class="json-compare-mode">
-                        <div id="jsonStructuralResult" class="json-diff-output">差异结果将显示在这里</div>
-                    </div>
-
-                    <div id="jsonSideBySideCompare" class="json-compare-mode hidden">
-                        <div id="jsonSideError" class="json-side-error"></div>
-                        <div class="cdiff-editor-container json-side-diff-container">
-                            <div class="cdiff-pane-edit">
-                                <div class="cdiff-input-header">JSON A (格式化)</div>
-                                <div class="cdiff-edit-area">
-                                    <div class="cdiff-gutter" id="jsonSideGutterA"></div>
-                                    <div class="cdiff-editor-wrap">
-                                        <div class="cdiff-backdrop" id="jsonSideBackdropA"></div>
-                                        <textarea id="jsonSideDiffA" class="cdiff-textarea" readonly spellcheck="false"></textarea>
-                                    </div>
-                                </div>
-                            </div>
-                            <div class="cdiff-divider"></div>
-                            <div class="cdiff-pane-edit">
-                                <div class="cdiff-input-header">JSON B (格式化)</div>
-                                <div class="cdiff-edit-area">
-                                    <div class="cdiff-gutter" id="jsonSideGutterB"></div>
-                                    <div class="cdiff-editor-wrap">
-                                        <div class="cdiff-backdrop" id="jsonSideBackdropB"></div>
-                                        <textarea id="jsonSideDiffB" class="cdiff-textarea" readonly spellcheck="false"></textarea>
-                                    </div>
+                            <div class="json-cm-diff-shell">
+                                <div class="json-cm-gutter cdiff-gutter" id="jsonCompareGutterB"></div>
+                                <div class="json-cm-diff-body">
+                                    <textarea id="jsonCompareB" class="editor" placeholder='{"key": "newValue"}' spellcheck="false"></textarea>
                                 </div>
                             </div>
                         </div>
@@ -1091,9 +1049,11 @@
     <script src="utils/image-lightbox.js"></script>
     <script src="utils/auto-formatter.js"></script>
     <script src="utils/json-utils.js"></script>
+    <script src="utils/json-worker-client.js"></script>
     <script src="utils/json-array-hints.js"></script>
     <script src="utils/json-value-interaction.js"></script>
     <script src="utils/diff-lines.js"></script>
+    <script src="utils/json-cm-diff.js"></script>
     <script src="generators/json-diff-engine.js"></script>
     <script src="utils/markdown-code-formatter.js"></script>
     <script src="utils/code-block-enhancer.js"></script>

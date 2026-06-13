@@ -175,9 +175,19 @@ const JsonValueInteraction = (function () {
         return root;
     }
 
+    function isInteractionDisabled(editor) {
+        if (!editor || typeof JsonUtils === 'undefined') return true;
+
+        const text = editor.getValue();
+        if (!text.trim()) return true;
+
+        return JsonUtils.getDocumentProfile(text).disableValueInteraction;
+    }
+
     function getPrimitivesForEditor(editor) {
         const text = editor.getValue();
         if (!text.trim() || typeof JsonUtils === 'undefined') return [];
+        if (JsonUtils.getDocumentProfile(text).disableValueInteraction) return [];
 
         const parsed = JsonUtils.parse(text);
         if (!parsed.ok) return [];
@@ -393,7 +403,7 @@ const JsonValueInteraction = (function () {
         stateStore.set(editor, state);
 
         editor.on('mousemove', (cm, event) => {
-            if (activeEditContext) return;
+            if (activeEditContext || isInteractionDisabled(cm)) return;
             const item = findPrimitiveAt(cm, getClickPos(cm, event));
             setHover(cm, state, item);
         });
@@ -404,6 +414,7 @@ const JsonValueInteraction = (function () {
 
         const handlePointer = (editorInstance, event, isDouble) => {
             if (activeEditContext) return;
+            if (isInteractionDisabled(editorInstance)) return;
             if (editorInstance.getWrapperElement()?.classList.contains('json-output-expanded-view')) {
                 return;
             }
@@ -503,6 +514,11 @@ const JsonValueInteraction = (function () {
         }
 
         setHover(editor, state, null);
+
+        const disabled = !formattedText
+            || formattedText.trim() === ''
+            || isInteractionDisabled(editor);
+        editor.getWrapperElement()?.classList.toggle('json-value-interaction-disabled', disabled);
     }
 
     return {

@@ -80,6 +80,73 @@ const jsonDiffEngine = (function () {
         }
     }
 
+    function formatValuePreview(value, maxLen = 160) {
+        if (value === null || typeof value !== 'object') {
+            let text = jsonVal(value);
+            if (text.length > maxLen) {
+                text = `${text.slice(0, maxLen)}…`;
+            }
+            return escapeHtml(text);
+        }
+
+        try {
+            const compact = JSON.stringify(value);
+            if (compact.length <= maxLen) {
+                return escapeHtml(compact);
+            }
+
+            if (typeof JsonUtils !== 'undefined') {
+                const formatted = JsonUtils.format(value, { indent: 2 });
+                if (formatted.length <= maxLen * 4) {
+                    return `<pre class="diff-value-pre">${escapeHtml(formatted)}</pre>`;
+                }
+            }
+
+            return escapeHtml(`${compact.slice(0, maxLen)}…`);
+        } catch (_) {
+            return escapeHtml(String(value));
+        }
+    }
+
+    function formatChangeLine(change, index) {
+        const path = escapeHtml(change.path);
+        const typeClass = change.type === 'added'
+            ? 'diff-added'
+            : (change.type === 'removed' ? 'diff-removed' : 'diff-changed');
+        const badge = change.type === 'added' ? '+' : (change.type === 'removed' ? '−' : '~');
+        const label = change.type === 'added' ? '新增' : (change.type === 'removed' ? '删除' : '变更');
+
+        let bodyHtml = '';
+
+        if (change.type === 'added') {
+            bodyHtml = `<div class="diff-value-block diff-value-new">${formatValuePreview(change.newValue)}</div>`;
+        } else if (change.type === 'removed') {
+            bodyHtml = `<div class="diff-value-block diff-value-old">${formatValuePreview(change.oldValue)}</div>`;
+        } else if (change.typeChange) {
+            bodyHtml = `
+                <div class="diff-type-change">类型 ${escapeHtml(change.typeChange)}</div>
+                <div class="diff-value-pair">
+                    <div class="diff-value-block diff-value-old">${formatValuePreview(change.oldValue)}</div>
+                    <div class="diff-value-block diff-value-new">${formatValuePreview(change.newValue)}</div>
+                </div>`;
+        } else {
+            bodyHtml = `
+                <div class="diff-value-pair">
+                    <div class="diff-value-block diff-value-old">${formatValuePreview(change.oldValue)}</div>
+                    <div class="diff-value-block diff-value-new">${formatValuePreview(change.newValue)}</div>
+                </div>`;
+        }
+
+        return `<div class="diff-row ${typeClass}" data-diff-idx="${index}" role="listitem">
+            <div class="diff-row-head">
+                <span class="diff-badge" aria-hidden="true">${badge}</span>
+                <span class="diff-label">${label}</span>
+                <code class="diff-path">${path}</code>
+            </div>
+            <div class="diff-row-body">${bodyHtml}</div>
+        </div>`;
+    }
+
     function diff(a, b, options = {}) {
         let valueA = a;
         let valueB = b;
@@ -98,24 +165,8 @@ const jsonDiffEngine = (function () {
             else if (change.type === 'changed') stats.changed++;
         });
 
-        const lines = changes.map(formatChangeLine);
+        const lines = changes.map((change, index) => formatChangeLine(change, index));
         return { changes, lines, stats };
-    }
-
-    function formatChangeLine(change) {
-        const path = escapeHtml(change.path);
-        const renderVal = (value) => escapeHtml(jsonVal(value));
-
-        if (change.type === 'added') {
-            return `<span class="diff-line diff-added">+ <span class="diff-key">${path}</span>: ${renderVal(change.newValue)}</span>`;
-        }
-        if (change.type === 'removed') {
-            return `<span class="diff-line diff-removed">- <span class="diff-key">${path}</span>: ${renderVal(change.oldValue)}</span>`;
-        }
-        if (change.typeChange) {
-            return `<span class="diff-line diff-changed">~ <span class="diff-key">${path}</span>: ${escapeHtml(change.typeChange)}</span>`;
-        }
-        return `<span class="diff-line diff-changed">~ <span class="diff-key">${path}</span>: ${renderVal(change.oldValue)} → ${renderVal(change.newValue)}</span>`;
     }
 
     function diffFromText(textA, textB, options = {}) {

@@ -167,6 +167,24 @@ class EditorManager {
      * Fold all foldable ranges in an editor (objects, arrays, braces)
      * @param {string} textareaId
      */
+    setPerformanceMode(textareaId, enabled) {
+        const editor = this.editors.get(textareaId);
+        if (!editor) return;
+
+        const wrapper = editor.getWrapperElement();
+        wrapper.classList.toggle('cm-performance-mode', !!enabled);
+
+        if (enabled) {
+            if (!editor._savedMode) {
+                editor._savedMode = editor.getOption('mode');
+            }
+            editor.setOption('mode', null);
+        } else if (editor._savedMode) {
+            editor.setOption('mode', editor._savedMode);
+            editor._savedMode = null;
+        }
+    }
+
     foldAll(textareaId) {
         const editor = this.editors.get(textareaId);
         if (!editor || typeof editor.foldCode !== 'function') return;

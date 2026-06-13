@@ -183,13 +183,21 @@ const JsonArrayHints = (function () {
 
         if (typeof JsonUtils === 'undefined') return;
 
+        const profile = JsonUtils.getDocumentProfile(formattedText);
+        if (profile.disableHints) {
+            clear(editor);
+            return;
+        }
+
         const parsed = JsonUtils.parse(formattedText);
         if (!parsed.ok) {
             clear(editor);
             return;
         }
 
-        apply(editor, collect(parsed.value, formattedText));
+        const hints = collect(parsed.value, formattedText);
+        const maxHints = JsonUtils.THRESHOLDS.MAX_ARRAY_HINTS;
+        apply(editor, hints.length > maxHints ? hints.slice(0, maxHints) : hints);
     }
 
     function createFoldWidget(cm) {
