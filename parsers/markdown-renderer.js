@@ -219,7 +219,62 @@ const MarkdownRenderer = {
             html = CodeBlockEnhancer.processCodeBlocks(html);
         }
 
+        // Step 8: Ensure headings have unique ids for TOC anchors
+        html = this.ensureHeadingIds(html);
+
         return html;
+    },
+
+    /**
+     * Assign unique id attributes to h1–h6 for TOC navigation.
+     * @param {string} html - Rendered HTML
+     * @returns {string}
+     */
+    ensureHeadingIds(html) {
+        if (!html || typeof document === 'undefined') return html;
+
+        const wrapper = document.createElement('div');
+        wrapper.innerHTML = html;
+        const headings = wrapper.querySelectorAll('h1, h2, h3, h4, h5, h6');
+        if (!headings.length) return html;
+
+        const used = Object.create(null);
+
+        headings.forEach((heading) => {
+            const existing = heading.getAttribute('id');
+            if (existing) {
+                used[existing] = (used[existing] || 0) + 1;
+                return;
+            }
+
+            const base = this.slugifyHeading(heading.textContent || '');
+            let id = base;
+            if (used[id]) {
+                used[id] += 1;
+                id = `${base}-${used[id]}`;
+            } else {
+                used[id] = 1;
+            }
+            heading.setAttribute('id', id);
+        });
+
+        return wrapper.innerHTML;
+    },
+
+    /**
+     * Build a URL-safe slug from heading text.
+     * @param {string} text
+     * @returns {string}
+     */
+    slugifyHeading(text) {
+        const slug = String(text)
+            .trim()
+            .toLowerCase()
+            .replace(/[\s\u3000]+/g, '-')
+            .replace(/[^\w\u4e00-\u9fff-]/g, '')
+            .replace(/-+/g, '-')
+            .replace(/^-|-$/g, '');
+        return slug || 'heading';
     },
 
     /**

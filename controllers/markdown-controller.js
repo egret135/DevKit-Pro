@@ -40,6 +40,12 @@
             }
         });
 
+        // Floating TOC (outside #markdownPreview so exports omit it)
+        if (typeof MarkdownToc !== 'undefined') {
+            const previewContainer = el.markdownPreview.closest('.markdown-preview-container');
+            MarkdownToc.mount(previewContainer, el.markdownWorkspace);
+        }
+
         // Restore saved content
         try {
             const saved = localStorage.getItem(STORAGE_KEY);
@@ -70,9 +76,16 @@
         document.addEventListener('keydown', (e) => {
             if (e.key === 'Escape' && el.markdownWorkspace.classList.contains('fullscreen-preview')) {
                 el.markdownWorkspace.classList.remove('fullscreen-preview');
+                syncTocFullscreen(false);
                 ctx.setStatus('退出全屏', 'ready');
             }
         });
+    }
+
+    function syncTocFullscreen(isFullscreen) {
+        if (typeof MarkdownToc !== 'undefined') {
+            MarkdownToc.setFullscreen(isFullscreen);
+        }
     }
 
     function flushSave(val) {
@@ -88,6 +101,7 @@
         if (!input.trim()) {
             ctx.elements.markdownPreview.innerHTML = '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
             lastRenderedHtml = '';
+            if (typeof MarkdownToc !== 'undefined') MarkdownToc.clear();
             return;
         }
 
@@ -107,12 +121,17 @@
                     Prism.highlightAllUnder(ctx.elements.markdownPreview);
                 }
 
+                if (typeof MarkdownToc !== 'undefined') {
+                    MarkdownToc.update(ctx.elements.markdownPreview);
+                }
+
                 ctx.setStatus('渲染完成', 'success');
             } else {
                 throw new Error('Markdown 渲染器未加载');
             }
         } catch (error) {
             ctx.elements.markdownPreview.innerHTML = `<p class="placeholder" style="color: var(--color-error);">渲染错误: ${error.message}</p>`;
+            if (typeof MarkdownToc !== 'undefined') MarkdownToc.clear();
             ctx.setStatus('渲染失败', 'error');
         }
     }
@@ -121,12 +140,14 @@
         editorManager.setValue('markdownInput', '');
         ctx.elements.markdownPreview.innerHTML = '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
         lastRenderedHtml = '';
+        if (typeof MarkdownToc !== 'undefined') MarkdownToc.clear();
         try { localStorage.removeItem(STORAGE_KEY); } catch (e) {}
         ctx.setStatus('Markdown 已清除', 'ready');
     }
 
     function toggleFullscreen() {
         const isFullscreen = ctx.elements.markdownWorkspace.classList.toggle('fullscreen-preview');
+        syncTocFullscreen(isFullscreen);
         ctx.setStatus(isFullscreen ? '全屏预览 (按 Esc 退出)' : '正常视图', 'ready');
     }
 

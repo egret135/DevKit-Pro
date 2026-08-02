@@ -755,6 +755,7 @@ body {
 /* ==================== Markdown Preview - Typora Style ==================== */
 /* Note: .markdown-preview-container is applied to .panel-body */
 .panel-body.markdown-preview-container {
+    position: relative;
     overflow-y: auto !important;
     overflow-x: hidden;
     padding: 30px 40px;
@@ -1062,6 +1063,318 @@ body {
 .markdown-preview input[type="checkbox"] {
     margin-right: 0.5rem;
     vertical-align: middle;
+}
+
+/* ==================== Markdown Floating TOC ==================== */
+/* Hosted on .panel (not the scrolling .panel-body) so it stays in view */
+#markdownWorkspace > .panel:last-child {
+    position: relative;
+}
+
+.md-toc {
+    position: absolute;
+    z-index: 20;
+    pointer-events: none;
+}
+
+.md-toc > * {
+    pointer-events: auto;
+}
+
+.md-toc[hidden] {
+    display: none !important;
+}
+
+.md-toc-toggle {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 12px;
+    border: 1px solid #e2e5ea;
+    border-radius: 8px;
+    background: rgba(255, 255, 255, 0.96);
+    color: #444;
+    font-size: 13px;
+    line-height: 1;
+    cursor: pointer;
+    box-shadow: 0 4px 16px rgba(0, 0, 0, 0.08);
+    transition: background 0.15s ease, box-shadow 0.15s ease, color 0.15s ease;
+}
+
+.md-toc-toggle:hover {
+    background: #fff;
+    color: #111;
+    box-shadow: 0 6px 20px rgba(0, 0, 0, 0.12);
+}
+
+.md-toc.is-open .md-toc-toggle {
+    display: none;
+}
+
+.md-toc-panel {
+    display: none;
+    flex-direction: column;
+    width: 240px;
+    max-width: min(240px, calc(100% - 24px));
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid #e2e5ea;
+    border-radius: 10px;
+    box-shadow: 0 8px 28px rgba(0, 0, 0, 0.12);
+    overflow: hidden;
+}
+
+.md-toc.is-open .md-toc-panel {
+    display: flex;
+}
+
+.md-toc-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    padding: 10px 12px;
+    border-bottom: 1px solid #eef0f3;
+    font-size: 13px;
+    font-weight: 600;
+    color: #222;
+    flex-shrink: 0;
+}
+
+.md-toc-header-actions {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+}
+
+.md-toc-fold-all {
+    display: none;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    padding: 0;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #888;
+    cursor: pointer;
+    transition: color 0.12s ease, background 0.12s ease;
+}
+
+.md-toc-fold-all:hover {
+    background: #f3f4f6;
+    color: #222;
+}
+
+.md-toc-fold-all .hidden {
+    display: none !important;
+}
+
+.md-toc-close {
+    width: 24px;
+    height: 24px;
+    border: none;
+    border-radius: 6px;
+    background: transparent;
+    color: #888;
+    font-size: 18px;
+    line-height: 1;
+    cursor: pointer;
+}
+
+.md-toc-close:hover {
+    background: #f3f4f6;
+    color: #222;
+}
+
+.md-toc-list {
+    list-style: none;
+    margin: 0;
+    padding: 8px 0;
+    overflow-y: auto;
+    overscroll-behavior: contain;
+}
+
+.md-toc-item {
+    margin: 0;
+    list-style: none;
+}
+
+.md-toc-row {
+    display: flex;
+    align-items: center;
+    gap: 2px;
+    min-width: 0;
+}
+
+.md-toc-fold,
+.md-toc-fold-spacer {
+    flex: 0 0 18px;
+    width: 18px;
+    height: 18px;
+}
+
+.md-toc-fold {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    margin-left: calc(var(--toc-indent, 0) * 12px);
+    padding: 0;
+    border: none;
+    border-radius: 4px;
+    background: transparent;
+    color: #8a8f98;
+    cursor: pointer;
+    transition: transform 0.15s ease, color 0.12s ease, background 0.12s ease;
+}
+
+.md-toc-fold:hover {
+    color: #333;
+    background: #eef0f3;
+}
+
+.md-toc-item.is-collapsed > .md-toc-row > .md-toc-fold {
+    transform: rotate(0deg);
+}
+
+.md-toc-item.has-children:not(.is-collapsed) > .md-toc-row > .md-toc-fold {
+    transform: rotate(90deg);
+}
+
+.md-toc-fold-spacer {
+    display: inline-block;
+    margin-left: calc(var(--toc-indent, 0) * 12px);
+}
+
+.md-toc-item a {
+    flex: 1 1 auto;
+    display: block;
+    min-width: 0;
+    padding: 6px 10px 6px 4px;
+    color: #555;
+    text-decoration: none;
+    font-size: 12.5px;
+    line-height: 1.45;
+    border-left: 2px solid transparent;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+    transition: color 0.12s ease, background 0.12s ease, border-color 0.12s ease;
+}
+
+.md-toc-item a:hover {
+    color: #111;
+    background: #f6f7f9;
+}
+
+.md-toc-item.is-active > .md-toc-row > a {
+    color: #0b57d0;
+    font-weight: 600;
+    border-left-color: #0b57d0;
+    background: #f0f5ff;
+}
+
+.md-toc-children {
+    list-style: none;
+    margin: 0;
+    padding: 0;
+}
+
+.md-toc-item.is-collapsed > .md-toc-children {
+    display: none;
+}
+
+/* Corner layout: bottom-right (split view) */
+.md-toc[data-layout="corner"] {
+    right: 16px;
+    bottom: 16px;
+}
+
+.md-toc[data-layout="corner"] .md-toc-panel {
+    max-height: 40vh;
+}
+
+.md-toc[data-layout="corner"] .md-toc-list {
+    max-height: calc(40vh - 44px);
+}
+
+/* Sidebar layout: left side (fullscreen) — flush top-left of preview */
+/* top/left synced in JS to the preview body edge; CSS fallback below */
+.md-toc[data-layout="sidebar"] {
+    left: 0;
+    top: 56px;
+    bottom: 0;
+    right: auto;
+    transform: none;
+    display: flex;
+    flex-direction: column;
+}
+
+.md-toc[data-layout="sidebar"] .md-toc-toggle {
+    display: none !important;
+}
+
+.md-toc[data-layout="sidebar"] .md-toc-close {
+    display: none !important;
+}
+
+.md-toc[data-layout="sidebar"] .md-toc-fold-all {
+    display: inline-flex;
+}
+
+.md-toc[data-layout="sidebar"] .md-toc-fold-all[hidden] {
+    display: none !important;
+}
+
+.md-toc[data-layout="sidebar"] .md-toc-panel,
+.md-toc[data-layout="sidebar"].is-open .md-toc-panel {
+    display: flex;
+    flex: 1 1 auto;
+    min-height: 0;
+    max-height: none;
+    height: 100%;
+    width: 260px;
+    max-width: min(260px, 100%);
+    border: none;
+    border-radius: 0;
+    box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06);
+}
+
+.md-toc[data-layout="sidebar"] .md-toc-list {
+    max-height: none;
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+/* TOC scrollbar — thin rounded thumb */
+.md-toc-list {
+    scrollbar-width: thin;
+    scrollbar-color: rgba(0, 0, 0, 0.18) transparent;
+}
+
+.md-toc-list::-webkit-scrollbar {
+    width: 6px;
+}
+
+.md-toc-list::-webkit-scrollbar-track {
+    background: transparent;
+    margin: 4px 0;
+}
+
+.md-toc-list::-webkit-scrollbar-thumb {
+    background: rgba(0, 0, 0, 0.16);
+    border-radius: 999px;
+    border: 1px solid transparent;
+    background-clip: padding-box;
+}
+
+.md-toc-list::-webkit-scrollbar-thumb:hover {
+    background: rgba(0, 0, 0, 0.28);
+    border: 1px solid transparent;
+    background-clip: padding-box;
+}
+
+.md-toc-list::-webkit-scrollbar-corner {
+    background: transparent;
 }
 
 /* ==================== Code Block Container with Toolbar ==================== */
