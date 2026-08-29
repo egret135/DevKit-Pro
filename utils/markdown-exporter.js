@@ -768,6 +768,252 @@ const MarkdownExporter = {
     },
 
     /**
+     * A4 portrait aspect ratio (height / width). PDF pages are sized to match
+     * the fixed export content width so each page maps 1:1 to a pixel slice
+     * (no extra scaling), matching the fidelity of the PNG/JPG export.
+     */
+    PDF_PAGE_RATIO: 297 / 210,
+
+    /**
+     * "Atomic" content units that a PDF page break should never slice through
+     * (e.g. cutting a paragraph mid-line, or an image/table row in half).
+     * Nested matches (e.g. a <p> inside a <li>) are collapsed to their
+     * outermost element - see collectAtomicRanges().
+     */
+    PDF_ATOMIC_SELECTORS: 'p, li, h1, h2, h3, h4, h5, h6, pre, blockquote, img, tr, hr, .mermaid-container, .markdown-math-block, .markdown-alert, figure',
+
+    /**
+     * Export markdown preview as a paginated PDF.
+     * Uses the same html2canvas rasterization pipeline as PNG/JPG export
+     * (including Mermaid SVG -> PNG conversion) so backgrounds, syntax
+     * highlighting colors, and diagrams are preserved exactly as rendered on
+     * screen. This avoids the browser print engine, which drops background
+     * colors/images by default and can reflow layout unpredictably.
+     * @param {HTMLElement} previewElement - The markdown preview element
+     */
+    async exportAsPDF(previewElement) {
+        if (typeof html2canvas === 'undefined') {
+            throw new Error('html2canvas library not loaded');
+        }
+        const JsPdfCtor = (typeof window !== 'undefined' && window.jspdf && window.jspdf.jsPDF) || null;
+        if (!JsPdfCtor) {
+            throw new Error('jsPDF library not loaded');
+        }
+
+        this.showLoading();
+        console.log('[DEBUG exportAsPDF] Starting export...');
+
+        let wrapper = null;
+        try {
+            const prepareResult = await this.prepareForExport(previewElement);
+            wrapper = prepareResult.wrapper;
+            const { width, height } = prepareResult;
+
+            const pageWidth = Math.round(width);
+            const pageHeight = Math.round(pageWidth * this.PDF_PAGE_RATIO);
+
+            const atomicRanges = this.collectAtomicRanges(wrapper);
+            const pageSlices = this.computePageSlices(height, pageHeight, atomicRanges);
+
+            console.log('[DEBUG exportAsPDF] Content:', width, 'x', height, '->', pageSlices.length, 'page(s) of', pageWidth, 'x', pageHeight);
+
+            const pdf = new JsPdfCtor({
+                orientation: 'portrait',
+                unit: 'px',
+                format: [pageWidth, pageHeight],
+                compress: true
+            });
+
+            for (let i = 0; i < pageSlices.length; i++) {
+                const { start, end } = pageSlices[i];
+                const currentPageHeight = end - start;
+
+                const canvas = await this.renderPageCanvas(wrapper, pageWidth, currentPageHeight, start, prepareResult);
+                const dataUrl = canvas.toDataURL('image/png', 1.0);
+
+                if (i > 0) {
+                    pdf.addPage([pageWidth, pageHeight], 'portrait');
+                }
+                pdf.addImage(dataUrl, 'PNG', 0, 0, pageWidth, currentPageHeight);
+
+                if (i < pageSlices.length - 1) {
+                    await new Promise((resolve) => setTimeout(resolve, 50));
+                }
+            }
+
+            pdf.save(this.generateFilename('pdf'));
+
+            if (wrapper && wrapper.parentNode) {
+                document.body.removeChild(wrapper);
+                wrapper = null;
+            }
+
+            this.hideLoading();
+            console.log('[DEBUG exportAsPDF] Export completed successfully');
+        } catch (error) {
+            if (wrapper && wrapper.parentNode) {
+                document.body.removeChild(wrapper);
+            }
+            this.hideLoading();
+            console.error('PDF export failed:', error);
+            throw error;
+        }
+    },
+
+    /**
+     * Collect the vertical [top, bottom) ranges (in px, relative to the
+     * wrapper's own top edge) of every "atomic" element inside the wrapper,
+     * per PDF_ATOMIC_SELECTORS. Nested matches (e.g. a <p> inside a loose
+     * <li>, or the <img> left behind inside a .mermaid-container after SVG
+     * conversion) are collapsed to just their outermost range, since only
+     * the outermost element's boundaries actually need protecting.
+     * @param {HTMLElement} wrapper - Must already be laid out in the DOM.
+     * @returns {{top: number, bottom: number}[]} Non-overlapping, sorted by top.
+     */
+    collectAtomicRanges(wrapper) {
+        const wrapperTop = wrapper.getBoundingClientRect().top;
+        const nodes = wrapper.querySelectorAll(this.PDF_ATOMIC_SELECTORS);
+
+        const ranges = [];
+        nodes.forEach((node) => {
+            const rect = node.getBoundingClientRect();
+            if (rect.height <= 0) return;
+            ranges.push({
+                top: rect.top - wrapperTop,
+                bottom: rect.bottom - wrapperTop
+            });
+        });
+
+        // Sort by top asc, then by bottom desc so a container sorts before
+        // (and thus "wins" over) any of its own nested matches.
+        ranges.sort((a, b) => (a.top - b.top) || (b.bottom - a.bottom));
+
+        const outer = [];
+        let activeBottom = -Infinity;
+        ranges.forEach((range) => {
+            if (range.top < activeBottom) return; // nested inside the active outer range
+            outer.push(range);
+            activeBottom = range.bottom;
+        });
+
+        return outer;
+    },
+
+    /**
+     * Split [0, totalHeight) into page-sized slices, nudging each internal
+     * break point earlier (never later) so it never falls inside an atomic
+     * range - i.e. the offending element is pushed whole onto the next page
+     * instead of being cut in half. Falls back to the naive break if the
+     * straddling element is itself taller than a full page (unavoidable).
+     * @param {number} totalHeight
+     * @param {number} pageHeight - Nominal/max page height.
+     * @param {{top: number, bottom: number}[]} atomicRanges - From collectAtomicRanges().
+     * @returns {{start: number, end: number}[]}
+     */
+    computePageSlices(totalHeight, pageHeight, atomicRanges) {
+        const slices = [];
+        let y = 0;
+
+        while (y < totalHeight - 0.5) {
+            let end = Math.min(y + pageHeight, totalHeight);
+
+            if (end < totalHeight) {
+                // Ranges are non-overlapping, so at most one can straddle `end`.
+                const straddling = atomicRanges.find((range) => range.top < end && range.bottom > end);
+                if (straddling) {
+                    const elementHeight = straddling.bottom - straddling.top;
+                    // Only defer if doing so actually avoids the cut, i.e. the
+                    // element (a) hasn't already started before this page and
+                    // (b) is short enough to fit whole within one page. Otherwise
+                    // deferring just wastes blank space without preventing a cut.
+                    if (straddling.top > y && elementHeight <= pageHeight) {
+                        end = straddling.top; // push the whole element onto the next page
+                    }
+                }
+            }
+
+            if (end <= y) {
+                end = Math.min(y + pageHeight, totalHeight); // safety net against zero progress
+            }
+
+            slices.push({ start: y, end });
+            y = end;
+        }
+
+        return slices;
+    },
+
+    /**
+     * Render one page-sized pixel slice of the (already SVG-converted) export
+     * wrapper via html2canvas. Clones the whole wrapper (which already carries
+     * its own padding/background) and shifts it up by yOffset inside a
+     * page-sized, overflow-hidden viewport, so slicing math stays a simple,
+     * non-overlapping crop of a single coordinate space.
+     * @param {HTMLElement} wrapper - Prepared export wrapper (from prepareForExport)
+     * @param {number} pageWidth
+     * @param {number} sliceHeight
+     * @param {number} yOffset
+     * @param {{ isFullscreen: boolean, exportMaxWidth: number }} prepareResult
+     * @returns {Promise<HTMLCanvasElement>}
+     */
+    async renderPageCanvas(wrapper, pageWidth, sliceHeight, yOffset, prepareResult) {
+        const { isFullscreen, exportMaxWidth } = prepareResult;
+
+        const viewport = document.createElement('div');
+        viewport.style.cssText = `
+            position: fixed;
+            left: -9999px;
+            top: 0;
+            width: ${pageWidth}px;
+            height: ${sliceHeight}px;
+            overflow: hidden;
+            background: #FFFFFF;
+        `;
+
+        const positioned = wrapper.cloneNode(true);
+        positioned.style.position = 'absolute';
+        positioned.style.left = '0';
+        positioned.style.top = `${-yOffset}px`;
+        positioned.style.margin = '0';
+        positioned.style.zIndex = 'auto';
+
+        viewport.appendChild(positioned);
+        document.body.appendChild(viewport);
+
+        // Safety net: no-ops if prepareForExport already converted all SVGs (it does).
+        await this.convertSvgsToImages(viewport);
+        await new Promise((resolve) => setTimeout(resolve, 80));
+
+        try {
+            return await html2canvas(viewport, {
+                width: pageWidth,
+                height: sliceHeight,
+                scale: 2,
+                useCORS: true,
+                allowTaint: false,
+                backgroundColor: '#FFFFFF',
+                logging: false,
+                onclone: (clonedDoc) => {
+                    const toolbars = clonedDoc.querySelectorAll('.mermaid-toolbar, .mermaid-export-buttons, .code-block-toolbar');
+                    toolbars.forEach((tb) => tb.remove());
+
+                    if (isFullscreen && exportMaxWidth) {
+                        const previews = clonedDoc.querySelectorAll('.markdown-preview');
+                        previews.forEach((preview) => {
+                            preview.style.setProperty('width', `${exportMaxWidth}px`, 'important');
+                            preview.style.setProperty('max-width', `${exportMaxWidth}px`, 'important');
+                        });
+                    }
+                }
+            });
+        } finally {
+            if (viewport.parentNode) {
+                document.body.removeChild(viewport);
+            }
+        }
+    },
+
+    /**
      * Export markdown preview as SVG
      * Note: SVG export captures the HTML as an embedded image in SVG format
      * Supports chunked export for content exceeding browser canvas limits
