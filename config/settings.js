@@ -16,7 +16,14 @@ const Settings = {
         jsonSortKeysOnCompare: true,
         jsonSubView: 'format', // 'format' | 'compare'
         jsonAutoFormat: true,
-        jsonExpandEscapedStrings: false
+        jsonExpandEscapedStrings: false,
+        mermaidCurve: 'basis', // 'basis' (curve) | 'orthogonal' (right-angle)
+        timestampFavoriteZones: [], // pinned timezones in the timestamp tool (local is always shown, implicitly); user adds their own (e.g. UTC) as needed
+        timestampUnixResultZone: 'local', // primary target zone for Unix -> Date
+        timestampDateStringZone: 'local', // zone the "date string" input is interpreted in
+        timestampPartsZone: 'local', // zone the "date parts" input is interpreted in
+        timestampConvertFromZone: 'local', // zone conversion row: source zone
+        timestampConvertToZone: 'UTC' // zone conversion row: target zone
     },
 
     getStorageArea() {

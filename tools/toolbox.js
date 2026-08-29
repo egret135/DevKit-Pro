@@ -25,6 +25,7 @@
         });
 
         // Initialize timestamp tool
+        initTzPicker();
         initTimestamp();
         initBase64();
         initUrl();
@@ -52,6 +53,194 @@
         document.getElementById(panelId)?.classList.add('active');
     }
 
+    // ==================== Shared Helpers ====================
+
+    // Copies text and shows a brief "已复制" confirmation on the triggering button.
+    function copyText(text, btn) {
+        if (!text) return;
+        navigator.clipboard.writeText(text).then(() => {
+            if (!btn) return;
+            const original = btn.textContent;
+            btn.textContent = '已复制';
+            btn.classList.add('copied');
+            setTimeout(() => {
+                btn.textContent = original;
+                btn.classList.remove('copied');
+            }, 1200);
+        });
+    }
+
+    // Parses a free-form date/time string into raw calendar parts, WITHOUT
+    // applying any timezone interpretation - the caller decides which zone
+    // the parts represent (via TimezoneUtils.zonedPartsToUnixMs). Primary
+    // format is "YYYY-MM-DD HH:mm:ss" (matches the input placeholder); falls
+    // back to native Date parsing (read back via local getters) for anything
+    // else the engine can understand.
+    function parseDateTimeStringToParts(input) {
+        if (!input) return null;
+        const trimmed = input.trim();
+        if (!trimmed) return null;
+
+        const m = trimmed.match(/^(\d{4})[-\/](\d{1,2})[-\/](\d{1,2})(?:[ T](\d{1,2}):(\d{1,2})(?::(\d{1,2}))?)?$/);
+        if (m) {
+            return {
+                year: parseInt(m[1], 10),
+                month: parseInt(m[2], 10),
+                day: parseInt(m[3], 10),
+                hour: m[4] ? parseInt(m[4], 10) : 0,
+                minute: m[5] ? parseInt(m[5], 10) : 0,
+                second: m[6] ? parseInt(m[6], 10) : 0
+            };
+        }
+
+        const fallback = new Date(trimmed);
+        if (fallback.toString() === 'Invalid Date') return null;
+        return {
+            year: fallback.getFullYear(),
+            month: fallback.getMonth() + 1,
+            day: fallback.getDate(),
+            hour: fallback.getHours(),
+            minute: fallback.getMinutes(),
+            second: fallback.getSeconds()
+        };
+    }
+
+    // Checks whether a persisted zone key is still a valid IANA zone (or the
+    // 'local' sentinel), guarding against stale/corrupted settings.
+    function isValidZoneKey(key) {
+        if (key === 'local') return true;
+        if (typeof key !== 'string' || !key) return false;
+        try {
+            // eslint-disable-next-line no-new
+            new Intl.DateTimeFormat('en-US', { timeZone: key });
+            return true;
+        } catch (_) {
+            return false;
+        }
+    }
+
+    // ==================== Timezone Picker (shared, searchable dropdown) ====================
+    // A single popover instance reused by every "pick a timezone" trigger
+    // across the Timestamp tool (favorites bar, per-row zone buttons, zone
+    // conversion row). Positioned next to whichever button opened it.
+    let tzPickerOnSelect = null;
+
+    function continentOf(zone) {
+        if (zone === 'UTC' || zone === 'GMT') return 'UTC';
+        const slash = zone.indexOf('/');
+        return slash === -1 ? '其它' : zone.slice(0, slash);
+    }
+
+    function makeTzPickerItem(zone) {
+        const item = document.createElement('button');
+        item.type = 'button';
+        item.className = 'tz-picker-item';
+        const nameEl = document.createElement('span');
+        nameEl.className = 'tz-picker-item-name';
+        nameEl.textContent = zone;
+        const offsetEl = document.createElement('span');
+        offsetEl.className = 'tz-picker-item-offset';
+        offsetEl.textContent = TimezoneUtils.getOffsetLabel(zone);
+        item.append(nameEl, offsetEl);
+        item.addEventListener('click', () => {
+            const onSelect = tzPickerOnSelect;
+            closeTzPicker();
+            if (onSelect) onSelect(zone);
+        });
+        return item;
+    }
+
+    function renderTzPickerList(filterText) {
+        const list = document.getElementById('tzPickerList');
+        if (!list) return;
+        list.innerHTML = '';
+
+        const allZones = TimezoneUtils.listZones();
+        const query = (filterText || '').trim().toLowerCase();
+
+        if (!query) {
+            const quickLabel = document.createElement('div');
+            quickLabel.className = 'tz-picker-group-label';
+            quickLabel.textContent = '常用';
+            list.appendChild(quickLabel);
+            TimezoneUtils.getQuickZones().forEach((zone) => list.appendChild(makeTzPickerItem(zone)));
+
+            const groups = new Map();
+            allZones.forEach((zone) => {
+                const key = continentOf(zone);
+                if (!groups.has(key)) groups.set(key, []);
+                groups.get(key).push(zone);
+            });
+            Array.from(groups.keys()).sort().forEach((continent) => {
+                const label = document.createElement('div');
+                label.className = 'tz-picker-group-label';
+                label.textContent = continent;
+                list.appendChild(label);
+                groups.get(continent).sort().forEach((zone) => list.appendChild(makeTzPickerItem(zone)));
+            });
+        } else {
+            const filtered = allZones.filter((zone) =>
+                zone.toLowerCase().includes(query) ||
+                TimezoneUtils.getOffsetLabel(zone).toLowerCase().includes(query)
+            );
+            if (filtered.length === 0) {
+                const empty = document.createElement('div');
+                empty.className = 'tz-picker-empty';
+                empty.textContent = '没有找到匹配的时区';
+                list.appendChild(empty);
+            } else {
+                filtered.forEach((zone) => list.appendChild(makeTzPickerItem(zone)));
+            }
+        }
+    }
+
+    function handleTzPickerOutsideClick(e) {
+        const popover = document.getElementById('tzPickerPopover');
+        if (!popover || popover.classList.contains('hidden')) return;
+        if (popover.contains(e.target)) return;
+        if (e.target.closest && e.target.closest('.tz-picker-trigger, #tzAddFavoriteBtn')) return;
+        closeTzPicker();
+    }
+
+    function closeTzPicker() {
+        const popover = document.getElementById('tzPickerPopover');
+        if (!popover) return;
+        popover.classList.add('hidden');
+        tzPickerOnSelect = null;
+        document.removeEventListener('mousedown', handleTzPickerOutsideClick);
+    }
+
+    function openTzPicker(anchorEl, onSelect) {
+        const popover = document.getElementById('tzPickerPopover');
+        const search = document.getElementById('tzPickerSearch');
+        if (!popover || !anchorEl) return;
+
+        tzPickerOnSelect = onSelect;
+
+        const rect = anchorEl.getBoundingClientRect();
+        const popoverWidth = 300; // matches CSS width
+        const left = Math.min(rect.left, window.innerWidth - popoverWidth - 12);
+        popover.style.left = `${Math.max(8, Math.round(left))}px`;
+        popover.style.top = `${Math.round(rect.bottom + 4)}px`;
+
+        popover.classList.remove('hidden');
+        if (search) {
+            search.value = '';
+        }
+        renderTzPickerList('');
+        if (search) {
+            setTimeout(() => search.focus(), 0);
+        }
+
+        document.addEventListener('mousedown', handleTzPickerOutsideClick);
+    }
+
+    function initTzPicker() {
+        document.getElementById('tzPickerSearch')?.addEventListener('input', (e) => {
+            renderTzPickerList(e.target.value);
+        });
+    }
+
     // ==================== Timestamp Tool ====================
     let prevDigits = [];
 
@@ -61,6 +250,53 @@
         const startBtn = document.getElementById('timestampStartBtn');
         const stopBtn = document.getElementById('timestampStopBtn');
         const refreshBtn = document.getElementById('timestampRefreshBtn');
+
+        // ---- Multi-timezone state ----
+        const localZone = TimezoneUtils.getLocalZone();
+        // No favorites by default - most users only need local time; anyone
+        // who wants UTC or other zones pinned can add them via "+ 添加时区",
+        // and that choice is persisted (see hydration below).
+        let favoriteZones = [];
+        let lastUnixResultDate = null;
+        const rowZones = {
+            unixResult: 'local',
+            dateString: 'local',
+            parts: 'local',
+            convertFrom: 'local',
+            convertTo: 'UTC'
+        };
+
+        function resolveZone(key) {
+            return key === 'local' ? localZone : key;
+        }
+
+        function shortZoneLabel(key) {
+            if (key === 'local') return '本地';
+            if (key === 'UTC') return 'UTC';
+            const seg = key.split('/').pop() || key;
+            return seg.replace(/_/g, ' ');
+        }
+
+        function setZoneButtonLabel(btn, key) {
+            if (!btn) return;
+            btn.textContent = shortZoneLabel(key);
+            btn.title = key === 'local'
+                ? `本地 (${localZone} · ${TimezoneUtils.getOffsetLabel(localZone)})`
+                : TimezoneUtils.describeZone(key);
+        }
+
+        function wireZoneButton(buttonId, key, onChange) {
+            const btn = document.getElementById(buttonId);
+            if (!btn) return;
+            setZoneButtonLabel(btn, key);
+            btn.addEventListener('click', (e) => {
+                e.stopPropagation();
+                openTzPicker(btn, (zone) => {
+                    onChange(zone);
+                    setZoneButtonLabel(btn, zone);
+                });
+            });
+        }
 
         // Initialize flip clock digits
         function initFlipClock() {
@@ -115,10 +351,169 @@
             });
 
             prevDigits = newDigits;
+            updateLiveStripTimes();
+        }
+
+        // ---- Favorite timezones bar ----
+        function renderFavoritesBar() {
+            const bar = document.getElementById('tzFavoritesBar');
+            if (!bar) return;
+            bar.innerHTML = '';
+
+            const localChip = document.createElement('span');
+            localChip.className = 'tz-chip tz-chip-fixed';
+            localChip.title = `${localZone} (${TimezoneUtils.getOffsetLabel(localZone)})`;
+            localChip.textContent = `本地 · ${TimezoneUtils.getOffsetLabel(localZone)}`;
+            bar.appendChild(localChip);
+
+            favoriteZones.forEach((zone) => {
+                const chip = document.createElement('span');
+                chip.className = 'tz-chip';
+                chip.title = zone;
+
+                const label = document.createElement('span');
+                label.textContent = `${shortZoneLabel(zone)} · ${TimezoneUtils.getOffsetLabel(zone)}`;
+
+                const removeBtn = document.createElement('button');
+                removeBtn.type = 'button';
+                removeBtn.className = 'tz-chip-remove';
+                removeBtn.textContent = '×';
+                removeBtn.title = '取消收藏';
+                removeBtn.addEventListener('click', (e) => {
+                    e.stopPropagation();
+                    favoriteZones = favoriteZones.filter((z) => z !== zone);
+                    Settings.set('timestampFavoriteZones', favoriteZones);
+                    renderFavoritesBar();
+                    renderLiveStrip();
+                    if (lastUnixResultDate) renderUnixMultiZone(lastUnixResultDate);
+                });
+
+                chip.append(label, removeBtn);
+                bar.appendChild(chip);
+            });
+        }
+
+        document.getElementById('tzAddFavoriteBtn')?.addEventListener('click', (e) => {
+            e.stopPropagation();
+            openTzPicker(e.currentTarget, (zone) => {
+                if (favoriteZones.includes(zone)) return;
+                favoriteZones = [...favoriteZones, zone];
+                Settings.set('timestampFavoriteZones', favoriteZones);
+                renderFavoritesBar();
+                renderLiveStrip();
+                if (lastUnixResultDate) renderUnixMultiZone(lastUnixResultDate);
+            });
+        });
+
+        // ---- Shared row builder for the live clock strip + Unix multi-zone list ----
+        // Both surfaces show the same shape of data (zone identity, date/time,
+        // UTC offset, copy action) so they share one DOM/CSS skeleton for a
+        // consistent, polished look instead of a plain flat text row.
+        function createZoneRow(key, zone) {
+            const row = document.createElement('div');
+            row.className = 'tz-multizone-row';
+            row.dataset.zone = zone;
+            row.dataset.key = key;
+
+            const dot = document.createElement('span');
+            dot.className = 'tz-multizone-dot';
+
+            const zoneInfo = document.createElement('div');
+            zoneInfo.className = 'tz-multizone-zone';
+            const mainLabel = document.createElement('span');
+            mainLabel.className = 'tz-multizone-zone-label';
+            mainLabel.textContent = shortZoneLabel(key);
+            zoneInfo.appendChild(mainLabel);
+            if (zone !== mainLabel.textContent) {
+                const sub = document.createElement('span');
+                sub.className = 'tz-multizone-zone-sub';
+                sub.textContent = zone;
+                zoneInfo.appendChild(sub);
+            }
+
+            const datetime = document.createElement('div');
+            datetime.className = 'tz-multizone-datetime';
+            const dateEl = document.createElement('span');
+            dateEl.className = 'tz-multizone-date';
+            const timeEl = document.createElement('span');
+            timeEl.className = 'tz-multizone-time';
+            datetime.append(dateEl, timeEl);
+
+            const trailing = document.createElement('div');
+            trailing.className = 'tz-multizone-trailing';
+            const offsetEl = document.createElement('span');
+            offsetEl.className = 'tz-multizone-offset';
+            const copyBtn = document.createElement('button');
+            copyBtn.type = 'button';
+            copyBtn.className = 'tz-result-copy';
+            copyBtn.textContent = '复制';
+            trailing.append(offsetEl, copyBtn);
+
+            row.append(dot, zoneInfo, datetime, trailing);
+            return { row, dateEl, timeEl, offsetEl, copyBtn };
+        }
+
+        function fillZoneRow(refs, formattedDateTime, offsetLabel) {
+            const [datePart, timePart] = formattedDateTime.split(' ');
+            refs.dateEl.textContent = datePart || '';
+            refs.timeEl.textContent = timePart || formattedDateTime;
+            refs.offsetEl.textContent = offsetLabel;
+        }
+
+        // ---- Live multi-timezone clock strip (refreshed alongside the flip clock) ----
+        function renderLiveStrip() {
+            const strip = document.getElementById('tzLiveStrip');
+            if (!strip) return;
+            strip.innerHTML = '';
+
+            const entries = [{ key: 'local', zone: localZone }, ...favoriteZones.map((z) => ({ key: z, zone: z }))];
+            entries.forEach(({ key, zone }) => {
+                const refs = createZoneRow(key, zone);
+                refs.copyBtn.addEventListener('click', () =>
+                    copyText(`${refs.dateEl.textContent} ${refs.timeEl.textContent}`, refs.copyBtn));
+                strip.appendChild(refs.row);
+            });
+
+            updateLiveStripTimes();
+        }
+
+        function updateLiveStripTimes() {
+            const strip = document.getElementById('tzLiveStrip');
+            if (!strip) return;
+            const now = new Date();
+            strip.querySelectorAll('.tz-multizone-row').forEach((row) => {
+                const zone = row.dataset.zone;
+                const refs = {
+                    dateEl: row.querySelector('.tz-multizone-date'),
+                    timeEl: row.querySelector('.tz-multizone-time'),
+                    offsetEl: row.querySelector('.tz-multizone-offset')
+                };
+                if (!refs.dateEl || !refs.timeEl || !refs.offsetEl) return;
+                fillZoneRow(refs, TimezoneUtils.formatInZone(now, zone), TimezoneUtils.getOffsetLabel(zone, now));
+            });
+        }
+
+        // ---- Unix -> Date multi-zone comparison list ----
+        function renderUnixMultiZone(date) {
+            const container = document.getElementById('unixToDateMultiZone');
+            if (!container) return;
+            container.innerHTML = '';
+            if (!date) return;
+
+            const entries = [{ key: 'local', zone: localZone }, ...favoriteZones.map((z) => ({ key: z, zone: z }))];
+            entries.forEach(({ key, zone }) => {
+                const refs = createZoneRow(key, zone);
+                const formatted = TimezoneUtils.formatInZone(date, zone);
+                fillZoneRow(refs, formatted, TimezoneUtils.getOffsetLabel(zone, date));
+                refs.copyBtn.addEventListener('click', () => copyText(formatted, refs.copyBtn));
+                container.appendChild(refs.row);
+            });
         }
 
         // Initialize
         initFlipClock();
+        renderFavoritesBar();
+        renderLiveStrip();
 
         // Auto-start timestamp updates
         timestampInterval = setInterval(updateFlipClock, 1000);
@@ -162,8 +557,8 @@
         // Refresh button
         refreshBtn?.addEventListener('click', updateFlipClock);
 
-        // Unix to Date
-        document.getElementById('unixToDateBtn')?.addEventListener('click', () => {
+        // ---- Unix -> Date (target zone selectable, plus multi-zone comparison) ----
+        function runUnixToDate() {
             const input = document.getElementById('unixInput')?.value;
             const unit = document.getElementById('unixUnit')?.value;
             const result = document.getElementById('unixToDateResult');
@@ -173,6 +568,8 @@
             const num = parseFloat(input);
             if (isNaN(num)) {
                 result.value = '无效的时间戳';
+                lastUnixResultDate = null;
+                renderUnixMultiZone(null);
                 return;
             }
 
@@ -181,30 +578,56 @@
 
             if (date.toString() === 'Invalid Date') {
                 result.value = '无效的时间戳';
-            } else {
-                result.value = formatDate(date);
+                lastUnixResultDate = null;
+                renderUnixMultiZone(null);
+                return;
             }
+
+            lastUnixResultDate = date;
+            result.value = TimezoneUtils.formatInZone(date, resolveZone(rowZones.unixResult));
+            renderUnixMultiZone(date);
+        }
+        document.getElementById('unixToDateBtn')?.addEventListener('click', runUnixToDate);
+
+        wireZoneButton('unixResultZoneBtn', rowZones.unixResult, (zone) => {
+            rowZones.unixResult = zone;
+            Settings.set('timestampUnixResultZone', zone);
+            if (lastUnixResultDate) runUnixToDate();
         });
 
-        // Date to Unix
-        document.getElementById('dateToUnixBtn')?.addEventListener('click', () => {
+        // ---- Date string -> Unix (input zone selectable) ----
+        function runDateStringToUnix() {
             const input = document.getElementById('dateStringInput')?.value;
             const unit = document.getElementById('dateToUnixUnit')?.value;
             const result = document.getElementById('dateToUnixResult');
+            const echo = document.getElementById('dateToUnixEcho');
 
-            if (!input || !result) return;
+            if (!result) return;
 
-            const date = new Date(input);
-            if (date.toString() === 'Invalid Date') {
+            const parts = parseDateTimeStringToParts(input);
+            if (!parts) {
                 result.value = '无效的日期格式';
-            } else {
-                const ts = unit === 'ms' ? date.getTime() : Math.floor(date.getTime() / 1000);
-                result.value = ts.toString();
+                if (echo) echo.textContent = '';
+                return;
             }
+
+            const ms = TimezoneUtils.zonedPartsToUnixMs(parts, resolveZone(rowZones.dateString));
+            result.value = (unit === 'ms' ? ms : Math.floor(ms / 1000)).toString();
+
+            if (echo) {
+                const date = new Date(ms);
+                echo.textContent = `= ${TimezoneUtils.formatInZone(date, localZone)} 本地  |  = ${TimezoneUtils.formatInZone(date, 'UTC')} UTC`;
+            }
+        }
+        document.getElementById('dateToUnixBtn')?.addEventListener('click', runDateStringToUnix);
+
+        wireZoneButton('dateStringZoneBtn', rowZones.dateString, (zone) => {
+            rowZones.dateString = zone;
+            Settings.set('timestampDateStringZone', zone);
         });
 
-        // Parts to Unix
-        document.getElementById('partsToUnixBtn')?.addEventListener('click', () => {
+        // ---- Date parts -> Unix (input zone selectable) ----
+        function runPartsToUnix() {
             const year = parseInt(document.getElementById('yearInput')?.value) || 2025;
             const month = parseInt(document.getElementById('monthInput')?.value) || 1;
             const day = parseInt(document.getElementById('dayInput')?.value) || 1;
@@ -213,13 +636,91 @@
             const second = parseInt(document.getElementById('secondInput')?.value) || 0;
             const unit = document.getElementById('partsToUnixUnit')?.value;
             const result = document.getElementById('partsToUnixResult');
+            const echo = document.getElementById('partsToUnixEcho');
 
             if (!result) return;
 
-            const date = new Date(year, month - 1, day, hour, minute, second);
-            const ts = unit === 'ms' ? date.getTime() : Math.floor(date.getTime() / 1000);
-            result.value = ts.toString();
+            const ms = TimezoneUtils.zonedPartsToUnixMs(
+                { year, month, day, hour, minute, second },
+                resolveZone(rowZones.parts)
+            );
+            result.value = (unit === 'ms' ? ms : Math.floor(ms / 1000)).toString();
+
+            if (echo) {
+                const date = new Date(ms);
+                echo.textContent = `= ${TimezoneUtils.formatInZone(date, localZone)} 本地  |  = ${TimezoneUtils.formatInZone(date, 'UTC')} UTC`;
+            }
+        }
+        document.getElementById('partsToUnixBtn')?.addEventListener('click', runPartsToUnix);
+
+        wireZoneButton('partsZoneBtn', rowZones.parts, (zone) => {
+            rowZones.parts = zone;
+            Settings.set('timestampPartsZone', zone);
         });
+
+        // ---- Timezone conversion: A zone's wall-clock time -> B zone's wall-clock time ----
+        function runZoneConvert() {
+            const input = document.getElementById('convertDateTimeInput')?.value;
+            const result = document.getElementById('convertZoneResult');
+            if (!result) return;
+
+            const parts = parseDateTimeStringToParts(input);
+            if (!parts) {
+                result.value = '无效的日期格式';
+                return;
+            }
+
+            const ms = TimezoneUtils.zonedPartsToUnixMs(parts, resolveZone(rowZones.convertFrom));
+            const targetZone = resolveZone(rowZones.convertTo);
+            result.value = `${TimezoneUtils.formatInZone(new Date(ms), targetZone)} (${TimezoneUtils.getOffsetLabel(targetZone)})`;
+        }
+        document.getElementById('convertZoneBtn')?.addEventListener('click', runZoneConvert);
+
+        wireZoneButton('convertFromZoneBtn', rowZones.convertFrom, (zone) => {
+            rowZones.convertFrom = zone;
+            Settings.set('timestampConvertFromZone', zone);
+        });
+        wireZoneButton('convertToZoneBtn', rowZones.convertTo, (zone) => {
+            rowZones.convertTo = zone;
+            Settings.set('timestampConvertToZone', zone);
+        });
+
+        // ---- Hydrate persisted zone preferences (favorites + per-row zones) ----
+        if (typeof Settings !== 'undefined') {
+            Settings.load().then((settings) => {
+                const savedFavorites = Array.isArray(settings.timestampFavoriteZones)
+                    ? settings.timestampFavoriteZones.filter(isValidZoneKey)
+                    : null;
+                if (savedFavorites) favoriteZones = savedFavorites;
+
+                const zoneSettingMap = {
+                    unixResult: 'timestampUnixResultZone',
+                    dateString: 'timestampDateStringZone',
+                    parts: 'timestampPartsZone',
+                    convertFrom: 'timestampConvertFromZone',
+                    convertTo: 'timestampConvertToZone'
+                };
+                const buttonIdMap = {
+                    unixResult: 'unixResultZoneBtn',
+                    dateString: 'dateStringZoneBtn',
+                    parts: 'partsZoneBtn',
+                    convertFrom: 'convertFromZoneBtn',
+                    convertTo: 'convertToZoneBtn'
+                };
+                Object.keys(zoneSettingMap).forEach((rowKey) => {
+                    const saved = settings[zoneSettingMap[rowKey]];
+                    if (saved && isValidZoneKey(saved)) {
+                        rowZones[rowKey] = saved;
+                        setZoneButtonLabel(document.getElementById(buttonIdMap[rowKey]), saved);
+                    }
+                });
+
+                renderFavoritesBar();
+                renderLiveStrip();
+            }).catch(() => {
+                // Keep the already-rendered defaults if settings fail to load.
+            });
+        }
     }
 
     function formatDate(date) {
