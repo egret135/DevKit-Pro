@@ -3,6 +3,8 @@
 
 const MarkdownRenderer = {
     initialized: false,
+    curve: 'basis', // 'basis' (smooth) | 'orthogonal' (right-angle)
+    chartCurveOverrides: Object.create(null),
 
     // GitHub Alert type definitions
     ALERT_TYPES: {
@@ -13,11 +15,19 @@ const MarkdownRenderer = {
         CAUTION: { icon: '🔴', class: 'alert-caution', label: 'Caution' }
     },
 
+    CURVE_OPTIONS: {
+        basis: { value: 'basis', label: '曲线', next: 'orthogonal', nextLabel: '直角' },
+        orthogonal: { value: 'orthogonal', label: '直角', next: 'basis', nextLabel: '曲线' }
+    },
+
     /**
      * Initialize the renderer with marked and mermaid configurations
+     * @param {{ curve?: string }} [options]
      */
-    init() {
-        if (this.initialized) return;
+    init(options) {
+        if (options && options.curve) {
+            this.curve = this.normalizeCurve(options.curve);
+        }
 
         // Configure marked for GitHub Flavored Markdown
         if (typeof marked !== 'undefined') {
@@ -29,22 +39,132 @@ const MarkdownRenderer = {
             });
         }
 
-        // Configure mermaid
-        if (typeof mermaid !== 'undefined') {
-            mermaid.initialize({
-                startOnLoad: false,
-                theme: 'default',
-                securityLevel: 'loose',
-                flowchart: {
-                    useMaxWidth: false,
-                    htmlLabels: true,
-                    curve: 'basis',
-                    wrappingWidth: 200
-                }
-            });
+        this.applyMermaidConfig();
+        this.initialized = true;
+    },
+
+    normalizeCurve(curve) {
+        // Migrate old prefs: linear/step* now mean the rewritten orthogonal mode.
+        if (
+            curve === 'orthogonal' ||
+            curve === 'linear' ||
+            curve === 'stepAfter' ||
+            curve === 'step' ||
+            curve === 'stepBefore'
+        ) {
+            return 'orthogonal';
+        }
+        return 'basis';
+    },
+
+    isOrthogonalCurve(curve) {
+        return this.normalizeCurve(curve) === 'orthogonal';
+    },
+
+    getMermaidCurve() {
+        // stepAfter produces axis-aligned segments without rewriting SVG points.
+        return this.isOrthogonalCurve(this.curve) ? 'stepAfter' : 'basis';
+    },
+
+    /**
+     * Apply / refresh mermaid flowchart curve setting.
+     * @param {string} [curve]
+     */
+    applyMermaidConfig(curve) {
+        if (curve) {
+            this.curve = this.normalizeCurve(curve);
         }
 
-        this.initialized = true;
+        if (typeof mermaid === 'undefined') return;
+
+        const orthogonal = this.isOrthogonalCurve(this.curve);
+
+        mermaid.initialize({
+            startOnLoad: false,
+            theme: 'default',
+            securityLevel: 'loose',
+            flowchart: {
+                useMaxWidth: false,
+                htmlLabels: true,
+                curve: this.getMermaidCurve(),
+                // Wider gaps in orthogonal mode reduce shared/stacked edge segments
+                nodeSpacing: orthogonal ? 72 : 50,
+                rankSpacing: orthogonal ? 90 : 50,
+                padding: orthogonal ? 24 : 15,
+                wrappingWidth: 200
+            }
+        });
+    },
+
+    getCurveMeta(curve) {
+        const key = this.normalizeCurve(curve);
+        return this.CURVE_OPTIONS[key];
+    },
+
+    getChartKey(code, index) {
+        return `${index}:${code}`;
+    },
+
+    getChartCurve(code, index, fallbackCurve) {
+        return this.chartCurveOverrides[this.getChartKey(code, index)] ||
+            this.normalizeCurve(fallbackCurve || this.curve);
+    },
+
+    setChartCurveOverride(code, index, curve) {
+        this.chartCurveOverrides[this.getChartKey(code, index)] = this.normalizeCurve(curve);
+    },
+
+    buildCurveToggleButton(index, curve) {
+        const meta = this.getCurveMeta(curve);
+        // Icon reflects the *next* style (what clicking will switch to)
+        const icon = meta.next === 'orthogonal'
+            ? '<path d="M4 6h8v12h8" stroke-linecap="round" stroke-linejoin="round"/>'
+            : '<path d="M4 18c4-12 12 0 16-12" stroke-linecap="round"/>';
+        return `<button class="mermaid-curve-btn" data-index="${index}" data-curve="${meta.value}" title="切换为${meta.nextLabel}" aria-label="切换连线样式为${meta.nextLabel}">
+                            <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+                                ${icon}
+                            </svg>
+                            ${meta.nextLabel}
+                        </button>`;
+    },
+
+    /**
+     * Clean SVG artifacts that can visually break right-angle edges.
+     * This deliberately does not modify path coordinates.
+     * @param {string} svg
+     * @returns {string}
+     */
+    cleanOrthogonalSvg(svg) {
+        if (!svg || typeof DOMParser === 'undefined') return svg;
+
+        try {
+            const doc = new DOMParser().parseFromString(svg, 'image/svg+xml');
+            if (doc.querySelector('parsererror')) return svg;
+
+            doc.querySelectorAll('.edgeLabel').forEach((label) => {
+                const text = (label.textContent || '').replace(/\u00a0/g, '').trim();
+                if (!text) {
+                    label.remove();
+                }
+            });
+
+            doc.querySelectorAll('.labelBkg, .edgeLabel rect').forEach((bg) => {
+                const label = bg.closest('.edgeLabel');
+                const text = label ? (label.textContent || '').replace(/\u00a0/g, '').trim() : '';
+                if (!label || !text) {
+                    bg.remove();
+                }
+            });
+
+            doc.querySelectorAll('.edgePath path, .edgePaths path').forEach((path) => {
+                path.setAttribute('stroke-linejoin', 'round');
+                path.setAttribute('stroke-linecap', 'round');
+            });
+
+            return new XMLSerializer().serializeToString(doc.documentElement);
+        } catch (e) {
+            return svg;
+        }
     },
 
     /**
@@ -80,6 +200,107 @@ const MarkdownRenderer = {
         }
 
         return { text: result, alertBlocks };
+    },
+
+    /**
+     * Find character ranges of fenced code blocks and inline code spans,
+     * so math delimiters inside code (e.g. shell `$VAR`) are left untouched.
+     * @param {string} text
+     * @returns {[number, number][]}
+     */
+    getProtectedRanges(text) {
+        const ranges = [];
+        const fenceRegex = /(```|~~~)[\s\S]*?\1/g;
+        let match;
+
+        while ((match = fenceRegex.exec(text)) !== null) {
+            ranges.push([match.index, match.index + match[0].length]);
+        }
+
+        const inlineCodeRegex = /`[^`\n]+`/g;
+        while ((match = inlineCodeRegex.exec(text)) !== null) {
+            ranges.push([match.index, match.index + match[0].length]);
+        }
+
+        return ranges;
+    },
+
+    isInProtectedRange(index, ranges) {
+        return ranges.some(([start, end]) => index >= start && index < end);
+    },
+
+    /**
+     * Preprocess math syntax: $$...$$ (display) and $...$ (inline).
+     * Extracted before marked.parse() so LaTeX chars (\, _, {, }) survive untouched,
+     * then rendered with KaTeX and reinserted as placeholders.
+     * @param {string} text
+     * @returns {{ text: string, mathBlocks: Array }}
+     */
+    preprocessMath(text) {
+        const mathBlocks = [];
+        if (typeof katex === 'undefined') {
+            return { text, mathBlocks };
+        }
+
+        const protectedRanges = this.getProtectedRanges(text);
+        let counter = 0;
+
+        // Block math ($$...$$) is tried first so it isn't split into two inline matches.
+        const mathRegex = /\$\$([\s\S]+?)\$\$|\$(?!\s)((?:\\\$|[^\n$])+?)(?<!\s)\$/g;
+
+        const result = text.replace(mathRegex, (match, blockExpr, inlineExpr, offset) => {
+            if (this.isInProtectedRange(offset, protectedRanges)) return match;
+
+            const isDisplay = blockExpr !== undefined;
+            const expr = (isDisplay ? blockExpr : inlineExpr).trim();
+            if (!expr) return match;
+
+            const placeholder = `MATH_BLOCK_${counter}_END`;
+            mathBlocks.push({ expr, display: isDisplay, placeholder });
+            counter++;
+
+            return isDisplay ? `\n\n${placeholder}\n\n` : placeholder;
+        });
+
+        return { text: result, mathBlocks };
+    },
+
+    /**
+     * Render collected math placeholders with KaTeX and splice them back into the HTML.
+     * @param {string} html
+     * @param {Array} mathBlocks
+     * @returns {string}
+     */
+    postprocessMath(html, mathBlocks) {
+        if (!mathBlocks.length || typeof katex === 'undefined') return html;
+
+        let result = html;
+
+        for (const block of mathBlocks) {
+            let rendered;
+            try {
+                rendered = katex.renderToString(block.expr, {
+                    throwOnError: false,
+                    displayMode: block.display,
+                    strict: 'ignore'
+                });
+            } catch (error) {
+                const source = block.display ? `$$${block.expr}$$` : `$${block.expr}$`;
+                rendered = `<span class="markdown-math-error" title="${this.escapeHtml(error.message || '公式渲染失败')}">${this.escapeHtml(source)}</span>`;
+            }
+
+            const wrapped = block.display
+                ? `<div class="markdown-math-block">${rendered}</div>`
+                : `<span class="markdown-math-inline">${rendered}</span>`;
+
+            const escaped = block.placeholder.replace(/[.*+?^${}()|[\]\\]/g, '\\$&');
+            result = result.replace(
+                new RegExp(`<p>\\s*${escaped}\\s*</p>|${escaped}`, 'g'),
+                wrapped
+            );
+        }
+
+        return result;
     },
 
     /**
@@ -121,24 +342,34 @@ const MarkdownRenderer = {
     /**
      * Render markdown text to HTML with Mermaid support
      * @param {string} markdownText - The markdown text to render
+     * @param {{ curve?: string }} [options]
      * @returns {Promise<string>} - The rendered HTML
      */
-    async render(markdownText) {
+    async render(markdownText, options) {
         if (!markdownText || !markdownText.trim()) {
             return '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
         }
 
-        this.init();
+        if (options && options.curve) {
+            this.init(options);
+        } else if (!this.initialized) {
+            this.init();
+        } else {
+            this.applyMermaidConfig();
+        }
 
         // Step 1: Preprocess GitHub Alert syntax
         const { text: alertProcessedText, alertBlocks } = this.preprocessAlerts(markdownText);
+
+        // Step 1b: Preprocess math syntax ($$...$$ / $...$) so marked doesn't mangle LaTeX
+        const { text: mathProcessedText, mathBlocks } = this.preprocessMath(alertProcessedText);
 
         // Step 2: Extract mermaid code blocks and replace with unique placeholders
         const mermaidBlocks = [];
         const placeholderPrefix = 'MERMAID_BLOCK_';
         const placeholderSuffix = '_END';
 
-        let processedText = alertProcessedText.replace(
+        let processedText = mathProcessedText.replace(
             /```mermaid\s*([\s\S]*?)```/gi,
             (match, code) => {
                 const index = mermaidBlocks.length;
@@ -161,14 +392,19 @@ const MarkdownRenderer = {
         html = this.postprocessAlerts(html, alertBlocks);
 
         // Step 5: Render mermaid diagrams and replace placeholders
+        const defaultCurve = this.curve;
         for (let i = 0; i < mermaidBlocks.length; i++) {
             const mermaidCode = mermaidBlocks[i];
             const placeholderText = `${placeholderPrefix}${i}${placeholderSuffix}`;
 
             try {
+                const chartCurve = this.getChartCurve(mermaidCode, i, defaultCurve);
+                this.applyMermaidConfig(chartCurve);
                 const svg = await this.renderMermaid(mermaidCode, i);
-                // Build mermaid container with toolbar (zoom + export buttons)
-                const containerHtml = `<div class="mermaid-container" data-chart-index="${i}">
+                const encodedSource = encodeURIComponent(mermaidCode);
+                const curveToggle = this.buildCurveToggleButton(i, chartCurve);
+                // Build mermaid container with toolbar (zoom + export + curve toggle)
+                const containerHtml = `<div class="mermaid-container" data-chart-index="${i}" data-curve="${chartCurve}" data-mermaid-source="${encodedSource}">
                     <div class="mermaid-toolbar">
                         <button class="mermaid-zoom-btn" data-index="${i}" title="放大查看">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -178,6 +414,7 @@ const MarkdownRenderer = {
                             </svg>
                             放大
                         </button>
+                        ${curveToggle}
                         <button class="mermaid-export-btn svg-btn" data-format="svg" data-index="${i}" title="导出 SVG">
                             <svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
                                 <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4M7 10l5 5 5-5M12 15V3"/>
@@ -209,6 +446,10 @@ const MarkdownRenderer = {
                 );
             }
         }
+        this.applyMermaidConfig(defaultCurve);
+
+        // Step 5b: Render math placeholders with KaTeX
+        html = this.postprocessMath(html, mathBlocks);
 
         // Step 6: Wrap tables in scrollable container
         html = html.replace(/<table>/g, '<div class="table-wrapper"><table>');
@@ -223,6 +464,61 @@ const MarkdownRenderer = {
         html = this.ensureHeadingIds(html);
 
         return html;
+    },
+
+    /**
+     * Re-render a single mermaid container with a new curve style.
+     * @param {HTMLElement} container
+     * @param {string} curve
+     * @returns {Promise<void>}
+     */
+    async rerenderContainer(container, curve) {
+        if (!container) throw new Error('图表容器不存在');
+
+        const encoded = container.getAttribute('data-mermaid-source');
+        if (!encoded) throw new Error('未找到图表源码');
+
+        let code;
+        try {
+            code = decodeURIComponent(encoded);
+        } catch (e) {
+            throw new Error('图表源码解析失败');
+        }
+
+        const index = parseInt(container.getAttribute('data-chart-index') || '0', 10);
+        const previousCurve = this.curve;
+        const nextCurve = this.normalizeCurve(curve);
+        let svg;
+        try {
+            this.applyMermaidConfig(nextCurve);
+            svg = await this.renderMermaid(code, index);
+        } finally {
+            this.applyMermaidConfig(previousCurve);
+        }
+        this.setChartCurveOverride(code, index, nextCurve);
+
+        const oldSvg = container.querySelector('svg[id^="mermaid-"]') ||
+            container.querySelector(':scope > svg');
+        if (oldSvg) {
+            oldSvg.outerHTML = svg;
+        } else {
+            container.insertAdjacentHTML('beforeend', svg);
+        }
+
+        container.setAttribute('data-curve', nextCurve);
+
+        const curveBtn = container.querySelector('.mermaid-curve-btn');
+        if (curveBtn) {
+            const meta = this.getCurveMeta(nextCurve);
+            const iconPath = meta.next === 'orthogonal'
+                ? '<path d="M4 6h8v12h8" stroke-linecap="round" stroke-linejoin="round"/>'
+                : '<path d="M4 18c4-12 12 0 16-12" stroke-linecap="round"/>';
+            curveBtn.setAttribute('data-curve', meta.value);
+            curveBtn.setAttribute('title', `切换为${meta.nextLabel}`);
+            curveBtn.setAttribute('aria-label', `切换连线样式为${meta.nextLabel}`);
+            curveBtn.innerHTML =
+                `<svg width="12" height="12" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">${iconPath}</svg> ${meta.nextLabel}`;
+        }
     },
 
     /**
@@ -292,6 +588,9 @@ const MarkdownRenderer = {
 
         try {
             const { svg } = await mermaid.render(uniqueId, code);
+            if (this.isOrthogonalCurve(this.curve)) {
+                return this.cleanOrthogonalSvg(svg);
+            }
             return svg;
         } catch (error) {
             throw new Error(error.message || 'Failed to render diagram');

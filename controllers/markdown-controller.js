@@ -58,6 +58,9 @@
         // Button listeners
         el.clearMarkdownBtn.addEventListener('click', handleClear);
         el.copyMarkdownHtmlBtn.addEventListener('click', handleCopyHtml);
+        if (el.exportMarkdownPdfBtn) {
+            el.exportMarkdownPdfBtn.addEventListener('click', handleExportPdf);
+        }
 
         // Mermaid chart export/zoom delegation
         el.markdownPreview.addEventListener('click', handleChartExport);
@@ -109,7 +112,9 @@
 
         try {
             if (typeof MarkdownRenderer !== 'undefined') {
-                const html = await MarkdownRenderer.render(input);
+                // Mermaid diagrams default to curved lines. Per-chart toggles are isolated
+                // in MarkdownRenderer and should not change the global render default.
+                const html = await MarkdownRenderer.render(input, { curve: 'basis' });
                 ctx.elements.markdownPreview.innerHTML = html;
                 lastRenderedHtml = html;
 
@@ -216,6 +221,31 @@
         }
     }
 
+    async function handleExportPdf() {
+        const previewContent = ctx.elements.markdownPreview.innerHTML;
+        const hasContent = previewContent &&
+            !previewContent.includes('class="placeholder"') &&
+            ctx.elements.markdownPreview.childNodes.length > 0;
+
+        if (!hasContent) {
+            ctx.setStatus('没有可导出的内容', 'error');
+            return;
+        }
+
+        if (typeof MarkdownExporter === 'undefined') {
+            ctx.setStatus('导出模块未加载', 'error');
+            return;
+        }
+
+        try {
+            ctx.setStatus('正在导出 PDF...', 'processing');
+            await MarkdownExporter.exportAsPDF(ctx.elements.markdownPreview);
+            ctx.setStatus('PDF 导出成功', 'success');
+        } catch (error) {
+            ctx.setStatus(`导出失败: ${error.message}`, 'error');
+        }
+    }
+
     async function handleChartExport(event) {
         // Handle zoom button click
         const zoomBtn = event.target.closest('.mermaid-zoom-btn');
@@ -224,6 +254,13 @@
             if (container && typeof ImageLightbox !== 'undefined') {
                 ImageLightbox.openMermaid(container);
             }
+            return;
+        }
+
+        // Toggle flowchart curve: basis (curve) <-> orthogonal (right-angle)
+        const curveBtn = event.target.closest('.mermaid-curve-btn');
+        if (curveBtn) {
+            await handleCurveToggle(curveBtn);
             return;
         }
 
@@ -266,6 +303,38 @@
             }
         } catch (error) {
             ctx.setStatus(`导出失败: ${error.message}`, 'error');
+        }
+    }
+
+    async function handleCurveToggle(curveBtn) {
+        if (typeof MarkdownRenderer === 'undefined') {
+            ctx.setStatus('Markdown 渲染器未加载', 'error');
+            return;
+        }
+
+        const currentAttr = curveBtn.getAttribute('data-curve');
+        const current = (
+            currentAttr === 'orthogonal' ||
+            currentAttr === 'linear' ||
+            currentAttr === 'stepAfter' ||
+            currentAttr === 'step'
+        )
+            ? 'orthogonal'
+            : 'basis';
+        const next = current === 'orthogonal' ? 'basis' : 'orthogonal';
+        const label = next === 'orthogonal' ? '直角' : '曲线';
+
+        try {
+            ctx.setStatus(`正在切换为${label}...`, 'processing');
+            const container = curveBtn.closest('.mermaid-container');
+            if (!container) {
+                throw new Error('未找到图表容器');
+            }
+            await MarkdownRenderer.rerenderContainer(container, next);
+
+            ctx.setStatus(`已切换为${label}`, 'success');
+        } catch (error) {
+            ctx.setStatus(`切换失败: ${error.message}`, 'error');
         }
     }
 
