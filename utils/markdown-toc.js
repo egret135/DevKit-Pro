@@ -28,6 +28,8 @@
     let lastActiveId = null;
 
     let isFullscreen = false;
+    /** Whether the sidebar (fullscreen) TOC panel itself is collapsed/hidden */
+    let sidebarCollapsed = false;
     let spyPaused = false;
     let spyPauseTimer = null;
     let scrollHandler = null;
@@ -62,14 +64,14 @@
             '  <div class="md-toc-header">',
             '    <span>目录</span>',
             '    <div class="md-toc-header-actions">',
-            '      <button type="button" class="md-toc-fold-all" title="全部折叠" aria-label="全部折叠">',
+            '      <button type="button" class="md-toc-fold-all" title="收起目录" aria-label="收起目录">',
             '        <svg class="icon-collapse-all" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">',
-            '          <path d="M7 14l5-5 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
-            '          <path d="M7 19l5-5 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+            '          <path d="M14 7l-5 5 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+            '          <path d="M19 7l-5 5 5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
             '        </svg>',
             '        <svg class="icon-expand-all hidden" width="14" height="14" viewBox="0 0 24 24" fill="none" aria-hidden="true">',
-            '          <path d="M7 5l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
-            '          <path d="M7 10l5 5 5-5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+            '          <path d="M5 7l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
+            '          <path d="M10 7l5 5-5 5" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"/>',
             '        </svg>',
             '      </button>',
             '      <button type="button" class="md-toc-close" title="收起" aria-label="收起目录">&times;</button>',
@@ -98,7 +100,7 @@
 
         foldAllBtn.addEventListener('click', (e) => {
             e.stopPropagation();
-            toggleFoldAll();
+            toggleSidebarCollapse();
         });
 
         listEl.addEventListener('click', handleItemClick);
@@ -158,6 +160,7 @@
 
     function setFullscreen(fullscreen) {
         isFullscreen = !!fullscreen;
+        if (!isFullscreen) sidebarCollapsed = false;
         applyLayout();
         renderList();
         if (!rootEl || rootEl.hidden) {
@@ -182,6 +185,33 @@
             rootEl.style.left = '';
             rootEl.style.bottom = '';
         }
+        syncSidebarCollapse();
+    }
+
+    /**
+     * Collapse/expand the entire sidebar TOC panel (fullscreen mode only).
+     * Distinct from per-item folding of nested tree branches.
+     */
+    function toggleSidebarCollapse() {
+        sidebarCollapsed = !sidebarCollapsed;
+        syncSidebarCollapse();
+    }
+
+    function syncSidebarCollapse() {
+        if (!rootEl) return;
+        const collapsed = isFullscreen && sidebarCollapsed;
+        rootEl.classList.toggle('is-sidebar-collapsed', collapsed);
+
+        if (foldAllBtn) {
+            foldAllBtn.title = collapsed ? '展开目录' : '收起目录';
+            foldAllBtn.setAttribute('aria-label', collapsed ? '展开目录' : '收起目录');
+            const collapseIcon = foldAllBtn.querySelector('.icon-collapse-all');
+            const expandIcon = foldAllBtn.querySelector('.icon-expand-all');
+            if (collapseIcon) collapseIcon.classList.toggle('hidden', collapsed);
+            if (expandIcon) expandIcon.classList.toggle('hidden', !collapsed);
+        }
+
+        requestAnimationFrame(() => syncSidebarPosition());
     }
 
     function update(previewEl) {
@@ -316,7 +346,6 @@
         const frag = document.createDocumentFragment();
         tree.forEach((node) => frag.appendChild(renderTreeNode(node, minLevel)));
         listEl.appendChild(frag);
-        syncFoldAllButton();
     }
 
     function renderTreeNode(node, minLevel) {
@@ -428,65 +457,6 @@
             foldBtn.title = collapsing ? '展开' : '折叠';
             foldBtn.setAttribute('aria-label', collapsing ? '展开子目录' : '折叠子目录');
         }
-        syncFoldAllButton();
-    }
-
-    function toggleFoldAll() {
-        if (!listEl) return;
-        const parents = listEl.querySelectorAll('.md-toc-item.has-children');
-        if (!parents.length) return;
-
-        const allCollapsed = Array.prototype.every.call(parents, (el) =>
-            el.classList.contains('is-collapsed')
-        );
-
-        if (allCollapsed) {
-            collapsedIds.clear();
-            parents.forEach((el) => {
-                el.classList.remove('is-collapsed');
-                const foldBtn = el.querySelector(':scope > .md-toc-row > .md-toc-fold');
-                if (foldBtn) {
-                    foldBtn.setAttribute('aria-expanded', 'true');
-                    foldBtn.title = '折叠';
-                    foldBtn.setAttribute('aria-label', '折叠子目录');
-                }
-            });
-        } else {
-            parents.forEach((el) => {
-                const id = el.dataset.id;
-                if (id) collapsedIds.add(id);
-                el.classList.add('is-collapsed');
-                const foldBtn = el.querySelector(':scope > .md-toc-row > .md-toc-fold');
-                if (foldBtn) {
-                    foldBtn.setAttribute('aria-expanded', 'false');
-                    foldBtn.title = '展开';
-                    foldBtn.setAttribute('aria-label', '展开子目录');
-                }
-            });
-        }
-
-        syncFoldAllButton();
-    }
-
-    function syncFoldAllButton() {
-        if (!foldAllBtn || !listEl) return;
-        const parents = listEl.querySelectorAll('.md-toc-item.has-children');
-        const hasParents = parents.length > 0;
-        foldAllBtn.hidden = !hasParents;
-        if (!hasParents) return;
-
-        const allCollapsed = Array.prototype.every.call(parents, (el) =>
-            el.classList.contains('is-collapsed')
-        );
-
-        foldAllBtn.classList.toggle('is-expand-mode', allCollapsed);
-        foldAllBtn.title = allCollapsed ? '全部展开' : '全部折叠';
-        foldAllBtn.setAttribute('aria-label', allCollapsed ? '全部展开' : '全部折叠');
-
-        const collapseIcon = foldAllBtn.querySelector('.icon-collapse-all');
-        const expandIcon = foldAllBtn.querySelector('.icon-expand-all');
-        if (collapseIcon) collapseIcon.classList.toggle('hidden', allCollapsed);
-        if (expandIcon) expandIcon.classList.toggle('hidden', !allCollapsed);
     }
 
     /** Expand collapsed ancestors so the target entry is visible. */
@@ -515,7 +485,6 @@
             }
             item = parentItem;
         }
-        syncFoldAllButton();
     }
 
     function findLinkById(id) {
