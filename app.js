@@ -52,17 +52,20 @@
         modeMarkdown: document.getElementById('modeMarkdown'),
         modeJson: document.getElementById('modeJson'),
         modeToolbox: document.getElementById('modeToolbox'),
+        modeImage: document.getElementById('modeImage'),
         converterWorkspace: document.getElementById('converterWorkspace'),
         diffWorkspace: document.getElementById('diffWorkspace'),
         markdownWorkspace: document.getElementById('markdownWorkspace'),
         jsonWorkspace: document.getElementById('jsonWorkspace'),
         toolboxWorkspace: document.getElementById('toolboxWorkspace'),
+        imageWorkspace: document.getElementById('imageWorkspace'),
 
         // Markdown Elements
         markdownInput: document.getElementById('markdownInput'),
         markdownPreview: document.getElementById('markdownPreview'),
         clearMarkdownBtn: document.getElementById('clearMarkdownBtn'),
         copyMarkdownHtmlBtn: document.getElementById('copyMarkdownHtmlBtn'),
+        exportMarkdownPdfBtn: document.getElementById('exportMarkdownPdfBtn'),
         exportMarkdownDropdown: document.getElementById('exportMarkdownDropdown'),
         exportMarkdownBtn: document.getElementById('exportMarkdownBtn'),
         toggleFullscreenBtn: document.getElementById('toggleFullscreenBtn'),
@@ -151,18 +154,25 @@
     async function switchMode(mode) {
         currentMode = mode;
         currentSettings.lastMode = mode;
-        await Settings.save(currentSettings);
+        // Use Settings.set (load-modify-save) rather than saving the whole
+        // currentSettings snapshot: other panels (e.g. the Toolbox timestamp
+        // tool) persist their own keys independently, and this runs on every
+        // tab switch, so a full-object save here would clobber those changes
+        // with the stale snapshot captured at app startup.
+        await Settings.set('lastMode', mode);
 
         elements.modeConverter.classList.remove('active');
         elements.modeDiff.classList.remove('active');
         elements.modeMarkdown.classList.remove('active');
         if (elements.modeJson) elements.modeJson.classList.remove('active');
         if (elements.modeToolbox) elements.modeToolbox.classList.remove('active');
+        if (elements.modeImage) elements.modeImage.classList.remove('active');
         elements.converterWorkspace.classList.add('hidden');
         elements.diffWorkspace.classList.add('hidden');
         elements.markdownWorkspace.classList.add('hidden');
         if (elements.jsonWorkspace) elements.jsonWorkspace.classList.add('hidden');
         if (elements.toolboxWorkspace) elements.toolboxWorkspace.classList.add('hidden');
+        if (elements.imageWorkspace) elements.imageWorkspace.classList.add('hidden');
 
         if (mode === 'converter') {
             elements.modeConverter.classList.add('active');
@@ -193,6 +203,11 @@
             elements.toolboxWorkspace.classList.remove('hidden');
             elements.converterOptions.style.visibility = 'hidden';
             setStatus('开发者工具箱', 'ready');
+        } else if (mode === 'image') {
+            elements.modeImage.classList.add('active');
+            elements.imageWorkspace.classList.remove('hidden');
+            elements.converterOptions.style.visibility = 'hidden';
+            setStatus('图片工具', 'ready');
         }
     }
 
@@ -295,11 +310,29 @@
         '.markdown': 'markdown'
     };
 
+    // Image drags are handled by the per-tool dropzones (图片工具), not the
+    // global text-file importer, so they shouldn't trigger the app-wide
+    // "file-dragging" outline.
+    function dragContainsImage(e) {
+        const items = e.dataTransfer && e.dataTransfer.items;
+        if (!items) return false;
+        for (const item of items) {
+            if (item.kind === 'file' && item.type && item.type.startsWith('image/')) {
+                return true;
+            }
+        }
+        return false;
+    }
+
     function initFileDrop() {
         const app = document.querySelector('.app');
 
         app.addEventListener('dragover', (e) => {
             e.preventDefault();
+            if (dragContainsImage(e)) {
+                app.classList.remove('file-dragging');
+                return;
+            }
             app.classList.add('file-dragging');
         });
 
@@ -309,12 +342,22 @@
             }
         });
 
+        // Per-tool dropzones call stopPropagation() on drop, which would leave
+        // the outline stuck on; capture-phase listeners always run first, so
+        // clear it here no matter where the drop (or cancelled drag) lands.
+        document.addEventListener('drop', () => app.classList.remove('file-dragging'), true);
+        document.addEventListener('dragend', () => app.classList.remove('file-dragging'), true);
+
         app.addEventListener('drop', (e) => {
             e.preventDefault();
             app.classList.remove('file-dragging');
 
             const file = e.dataTransfer.files[0];
             if (!file) return;
+
+            // Ignore image drops that landed outside a dropzone; the global
+            // importer only handles text formats.
+            if (file.type && file.type.startsWith('image/')) return;
 
             const ext = '.' + file.name.split('.').pop().toLowerCase();
             const targetMode = FILE_EXT_MODE[ext];
@@ -412,6 +455,7 @@
         if (DevKit.MarkdownController) DevKit.MarkdownController.init(ctx);
         if (DevKit.JsonController) DevKit.JsonController.init(ctx);
         if (DevKit.ToolboxController) DevKit.ToolboxController.init();
+        if (DevKit.ImageToolboxController) DevKit.ImageToolboxController.init();
 
         // Shared event listeners
         elements.settingsBtn.addEventListener('click', () => showModal(true));
@@ -424,6 +468,7 @@
         elements.modeMarkdown.addEventListener('click', () => switchMode('markdown'));
         elements.modeJson.addEventListener('click', () => switchMode('json'));
         elements.modeToolbox.addEventListener('click', () => switchMode('toolbox'));
+        elements.modeImage.addEventListener('click', () => switchMode('image'));
 
         // Appearance instant preview
         elements.editorTheme.addEventListener('change', () => {

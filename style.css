@@ -326,6 +326,16 @@ body {
     transition: grid-template-columns 0.2s ease;
 }
 
+/* Reserve space for the sidebar TOC in fullscreen mode so it never covers content */
+#markdownWorkspace.fullscreen-preview>.panel:last-child:has(>.md-toc[data-layout="sidebar"]:not([hidden]):not(.is-sidebar-collapsed)) .markdown-preview-container {
+    padding-left: 300px;
+}
+
+/* Collapsed TOC rail still needs a little reserved space */
+#markdownWorkspace.fullscreen-preview>.panel:last-child:has(>.md-toc[data-layout="sidebar"]:not([hidden]).is-sidebar-collapsed) .markdown-preview-container {
+    padding-left: 84px;
+}
+
 
 .panel-header.small {
     min-height: 32px;
@@ -760,6 +770,7 @@ body {
     overflow-x: hidden;
     padding: 30px 40px;
     background: #FFFFFF;
+    transition: padding-left 0.2s ease;
 }
 
 .markdown-preview {
@@ -986,6 +997,14 @@ body {
     height: auto;
 }
 
+/* Orthogonal edge polish */
+.markdown-preview .mermaid-container[data-curve="orthogonal"] .edgePath path,
+.markdown-preview .mermaid-container[data-curve="orthogonal"] .edgePaths path {
+    stroke-linejoin: round;
+    stroke-linecap: round;
+    stroke-width: 1.6px;
+}
+
 /* Mermaid Export Buttons */
 .mermaid-export-buttons {
     position: absolute;
@@ -1063,6 +1082,36 @@ body {
 .markdown-preview input[type="checkbox"] {
     margin-right: 0.5rem;
     vertical-align: middle;
+}
+
+/* ==================== Math Formulas (KaTeX) ==================== */
+.markdown-preview .markdown-math-block {
+    margin: 1.2rem 0;
+    padding: 0.4rem 0;
+    overflow-x: auto;
+    text-align: center;
+}
+
+.markdown-preview .markdown-math-block .katex-display {
+    margin: 0;
+}
+
+.markdown-preview .markdown-math-inline {
+    display: inline-block;
+    max-width: 100%;
+    overflow-x: auto;
+    vertical-align: middle;
+}
+
+.markdown-preview .markdown-math-error {
+    color: #C53030;
+    background: #FFF5F5;
+    border: 1px solid #FED7D7;
+    border-radius: 3px;
+    padding: 0.1em 0.4em;
+    font-family: var(--font-mono);
+    font-size: 0.9em;
+    cursor: help;
 }
 
 /* ==================== Markdown Floating TOC ==================== */
@@ -1337,12 +1386,32 @@ body {
     border: none;
     border-radius: 0;
     box-shadow: 2px 0 12px rgba(0, 0, 0, 0.06);
+    transition: width 0.18s ease;
 }
 
 .md-toc[data-layout="sidebar"] .md-toc-list {
     max-height: none;
     flex: 1 1 auto;
     min-height: 0;
+}
+
+/* Collapsed sidebar: shrink to a thin rail with just the toggle button */
+.md-toc[data-layout="sidebar"].is-sidebar-collapsed .md-toc-panel {
+    width: 44px;
+    max-width: 44px;
+}
+
+.md-toc[data-layout="sidebar"].is-sidebar-collapsed .md-toc-header {
+    justify-content: center;
+    padding: 10px 0;
+}
+
+.md-toc[data-layout="sidebar"].is-sidebar-collapsed .md-toc-header>span {
+    display: none;
+}
+
+.md-toc[data-layout="sidebar"].is-sidebar-collapsed .md-toc-list {
+    display: none;
 }
 
 /* TOC scrollbar — thin rounded thumb */
@@ -1664,6 +1733,601 @@ body {
     height: 100%;
 }
 
+.image-workspace {
+    display: flex;
+    flex-direction: column;
+    height: 100%;
+}
+
+/* Image Tools tab bar + panels mirror .toolbox-tab/.tool-panel visually,
+   but use distinct class names so tools/image-toolbox.js can scope its
+   querySelectorAll calls without colliding with tools/toolbox.js's
+   global .toolbox-tab/.tool-panel selectors. */
+.img-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+    padding: var(--space-3) var(--space-4);
+    background: var(--color-bg-secondary);
+    border-bottom: 1px solid var(--color-border);
+    flex-shrink: 0;
+}
+
+.img-tab {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-bg);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    cursor: pointer;
+    transition: all var(--transition-fast);
+    font-family: var(--font-sans);
+    font-size: 13px;
+    color: var(--color-text-secondary);
+}
+
+.img-tab:hover {
+    background: var(--color-bg-elevated);
+    border-color: var(--color-border-strong);
+    color: var(--color-text-primary);
+}
+
+.img-tab.active {
+    background: var(--color-accent-subtle);
+    border-color: var(--color-accent);
+    color: var(--color-accent);
+}
+
+.img-tool-content {
+    flex: 1;
+    overflow-y: auto;
+    padding: var(--space-6);
+    background: var(--color-bg);
+    display: flex;
+    justify-content: center;
+    /* Default align-items:stretch would pin the panel card's height to the
+       visible scroll area, letting taller content (e.g. a decoded image near
+       the bottom) spill past the card's border. flex-start lets the card grow
+       with its content and scroll inside this container instead. */
+    align-items: flex-start;
+}
+
+.img-tool-panel {
+    display: none;
+    max-width: 1200px;
+    width: 100%;
+    min-width: 0;
+}
+
+.img-tool-panel.active {
+    display: block;
+}
+
+/* ==================== Image Tools - Shared Components ==================== */
+
+.img-dropzone {
+    position: relative;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    justify-content: center;
+    gap: var(--space-2);
+    min-height: 180px;
+    min-width: 0;
+    /* Fill the .tool-row it sits in, so the dropzone keeps its full width
+       even when the hint is hidden after an image has been loaded. */
+    flex: 1 1 auto;
+    padding: var(--space-6);
+    background: var(--color-bg-secondary);
+    border: 2px dashed var(--color-border-strong);
+    border-radius: var(--radius-md);
+    cursor: pointer;
+    text-align: center;
+    transition: all var(--transition-fast);
+    outline: none;
+}
+
+.img-dropzone:hover {
+    border-color: var(--color-accent);
+    background: var(--color-accent-subtle);
+}
+
+.img-dropzone.img-dropzone-active {
+    border-color: var(--color-accent);
+    background: var(--color-accent-subtle);
+    box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.12);
+}
+
+.img-dropzone-hint {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    color: var(--color-text-secondary);
+    font-size: 13px;
+}
+
+.img-dropzone-icon {
+    font-size: 32px;
+    line-height: 1;
+}
+
+.img-dropzone-hint-sub {
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+}
+
+.img-dropzone-preview {
+    display: block;
+    max-width: 100%;
+    max-height: 260px;
+    min-width: 0;
+    min-height: 0;
+    border-radius: var(--radius-sm);
+    box-shadow: var(--shadow-md);
+    object-fit: contain;
+}
+
+/* Applied to standalone preview images (not inside a clickable dropzone) that
+   support click-to-enlarge via ImageLightbox. */
+.img-lightbox-trigger {
+    cursor: zoom-in;
+}
+
+.img-meta-row {
+    display: flex;
+    flex-wrap: wrap;
+    gap: var(--space-2) var(--space-4);
+    margin-top: calc(-1 * var(--space-2));
+}
+
+.img-meta {
+    font-size: 12px;
+    color: var(--color-text-secondary);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-sm);
+    padding: 2px 10px;
+}
+
+.img-meta.accent {
+    color: var(--color-accent);
+    border-color: var(--color-accent-subtle);
+    background: var(--color-accent-subtle);
+}
+
+.img-meta.success {
+    color: var(--color-success);
+    border-color: #d1fae5;
+    background: #ecfdf5;
+}
+
+.img-divider {
+    height: 1px;
+    background: var(--color-border);
+    margin: var(--space-2) 0 var(--space-5);
+}
+
+.img-before-after {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: var(--space-4);
+    /* Breathing room before whatever row follows (e.g. the diff tool's
+       threshold controls); removed again when this grid is the last child. */
+    margin-bottom: var(--space-5);
+    /* Grid items default to min-width:auto, which is based on their content's
+       intrinsic size. Without this, a preview card holding a large uploaded
+       image would force its 1fr track (and everything up the layout tree) to
+       grow to the image's raw pixel width instead of shrinking to fit. */
+    min-width: 0;
+}
+
+.img-before-after:last-child {
+    margin-bottom: 0;
+}
+
+.img-preview-card {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+    align-items: center;
+    padding: var(--space-4);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    min-height: 160px;
+    min-width: 0;
+    justify-content: center;
+}
+
+.img-preview-card-label {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.04em;
+}
+
+.img-preview-card img,
+.img-preview-card canvas {
+    max-width: 100%;
+    max-height: 200px;
+    min-width: 0;
+    min-height: 0;
+    border-radius: var(--radius-sm);
+    object-fit: contain;
+    background:
+        linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
+        linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
+        linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+}
+
+.img-preview-card-size {
+    font-size: 13px;
+    color: var(--color-text-primary);
+    font-family: var(--font-mono);
+}
+
+.img-slider-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+}
+
+.img-slider-row input[type="range"] {
+    flex: 1;
+    accent-color: var(--color-accent);
+    cursor: pointer;
+}
+
+.img-slider-value {
+    min-width: 48px;
+    text-align: right;
+    font-family: var(--font-mono);
+    font-size: 13px;
+    color: var(--color-text-primary);
+    font-weight: 600;
+}
+
+.img-empty-hint {
+    color: var(--color-text-tertiary);
+    font-size: 13px;
+    padding: var(--space-4) 0;
+}
+
+.img-favicon-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(110px, 1fr));
+    gap: var(--space-3);
+    margin: var(--space-4) 0;
+}
+
+.img-favicon-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: var(--space-2);
+    padding: var(--space-3);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.img-favicon-cell img {
+    width: 48px;
+    height: 48px;
+    object-fit: contain;
+    background:
+        linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
+        linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
+        linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
+    background-size: 12px 12px;
+    background-position: 0 0, 0 6px, 6px -6px, -6px 0;
+    border-radius: var(--radius-sm);
+}
+
+.img-favicon-cell-label {
+    font-size: 12px;
+    font-family: var(--font-mono);
+    color: var(--color-text-secondary);
+}
+
+.img-favicon-cell .tool-btn-action {
+    width: 100%;
+    text-align: center;
+}
+
+.img-exif-table-wrap {
+    width: 100%;
+}
+
+.img-exif-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+}
+
+.img-exif-table tr {
+    border-bottom: 1px solid var(--color-border);
+}
+
+.img-exif-table tr:last-child {
+    border-bottom: none;
+}
+
+.img-exif-table td {
+    padding: var(--space-2) var(--space-3);
+    vertical-align: top;
+}
+
+.img-exif-table td:first-child {
+    width: 220px;
+    max-width: 220px;
+    color: var(--color-text-secondary);
+    font-family: var(--font-mono);
+    font-weight: 600;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.img-exif-table td:last-child {
+    color: var(--color-text-primary);
+    word-break: break-all;
+}
+
+.img-exif-table tr:nth-child(odd) {
+    background: var(--color-bg-secondary);
+}
+
+/* Editor-only: let this panel stretch to the full content width without
+   touching the 1200px cap that every other image tool panel keeps. */
+.img-tool-panel.img-panel-wide {
+    max-width: none;
+}
+
+/* Editor-only: pin the panel to the visible content height so the editor
+   never introduces vertical page scrolling; inner areas adapt instead. */
+.img-tool-panel.img-panel-wide.active {
+    display: flex;
+    flex-direction: column;
+    align-self: stretch;
+    min-height: 0;
+}
+
+/* Side-by-side editing layout: canvas stage on the left grows freely,
+   control sections stack in a fixed-width column on the right. */
+.img-editor-work {
+    display: flex;
+    align-items: flex-start;
+    gap: var(--space-6);
+    flex: 1 1 auto;
+    min-height: 0;
+}
+
+.img-editor-stage {
+    flex: 3 1 0;
+    min-width: 0;
+    min-height: 0;
+    align-self: stretch;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-4);
+    padding: var(--space-4);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.img-editor-toolbar {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    flex-wrap: wrap;
+}
+
+.img-editor-toolbar-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+}
+
+/* Centers the checkerboard canvas frame in the remaining stage space.
+   container-type: size lets the canvas cap itself to this box via cq units,
+   which is what keeps oversized images from forcing page scroll. */
+.img-editor-canvas-area {
+    flex: 1;
+    min-height: 0;
+    display: flex;
+    align-items: center;
+    justify-content: center;
+    container-type: size;
+}
+
+/* Before an image is chosen the dropzone IS the stage content: stretch it to
+   fill the whole canvas area instead of sitting as a thin strip. */
+.img-editor-canvas-area .img-dropzone {
+    align-self: stretch;
+    height: auto;
+}
+
+.img-editor-controls {
+    flex: 2 1 0;
+    min-width: 0;
+    min-height: 0;
+    align-self: stretch;
+    overflow-y: auto;
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-3);
+}
+
+/* Until an image is loaded the operations are meaningless; keep them visible
+   (so the layout reads left/right from the start) but inert and dimmed. */
+.img-editor-controls.is-disabled {
+    opacity: 0.55;
+    pointer-events: none;
+}
+
+/* Each operation group reads as its own card in the controls column. */
+.img-editor-controls .img-editor-section {
+    padding: var(--space-4);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+/* Rows were designed for a wide horizontal strip; inside the narrow controls
+   column they must be allowed to wrap instead of overflowing. */
+.img-editor-controls .tool-row {
+    flex-wrap: wrap;
+    white-space: normal;
+    row-gap: var(--space-2);
+    margin-bottom: 0;
+}
+
+/* Narrow screens: a pinned-height side-by-side editor would crush both
+   columns, so fall back to stacked flow with normal page scrolling. */
+@media (max-width: 1100px) {
+    .img-tool-panel.img-panel-wide.active {
+        align-self: flex-start;
+        min-height: auto;
+    }
+
+    .img-editor-work {
+        flex-direction: column;
+        flex: none;
+        min-height: auto;
+    }
+
+    .img-editor-canvas-area {
+        container-type: normal;
+        min-height: 320px;
+    }
+
+    .img-editor-canvas-wrap canvas {
+        max-width: 100%;
+        max-height: 60vh;
+    }
+
+    .img-editor-controls {
+        flex: 1 1 auto;
+        max-width: none;
+        width: 100%;
+        align-self: auto;
+        overflow-y: visible;
+    }
+}
+
+.img-editor-canvas-wrap {
+    position: relative;
+    display: inline-block;
+    max-width: 100%;
+    min-width: 0;
+    margin: 0 auto;
+    background:
+        linear-gradient(45deg, #e5e7eb 25%, transparent 25%),
+        linear-gradient(-45deg, #e5e7eb 25%, transparent 25%),
+        linear-gradient(45deg, transparent 75%, #e5e7eb 75%),
+        linear-gradient(-45deg, transparent 75%, #e5e7eb 75%);
+    background-size: 16px 16px;
+    background-position: 0 0, 0 8px, 8px -8px, -8px 0;
+    border-radius: var(--radius-sm);
+    border: 1px solid var(--color-border);
+    line-height: 0;
+}
+
+.img-editor-canvas-wrap canvas {
+    display: block;
+    max-width: 100%;
+    max-height: 70vh;
+    /* Fit within the canvas area exactly (cq units override the vh fallback). */
+    max-width: 100cqw;
+    max-height: 100cqh;
+    min-width: 0;
+    min-height: 0;
+    border-radius: var(--radius-sm);
+}
+
+.img-editor-crop-overlay {
+    position: absolute;
+    border: 2px dashed var(--color-accent);
+    background: rgba(59, 130, 246, 0.12);
+    box-shadow: 0 0 0 2000px rgba(0, 0, 0, 0.35);
+    cursor: move;
+}
+
+.img-editor-crop-handle {
+    position: absolute;
+    width: 12px;
+    height: 12px;
+    background: var(--color-accent);
+    border: 2px solid #fff;
+    border-radius: 50%;
+    transform: translate(-50%, -50%);
+}
+
+.img-editor-crop-handle[data-handle="nw"] { top: 0; left: 0; cursor: nwse-resize; }
+.img-editor-crop-handle[data-handle="ne"] { top: 0; left: 100%; cursor: nesw-resize; }
+.img-editor-crop-handle[data-handle="sw"] { top: 100%; left: 0; cursor: nesw-resize; }
+.img-editor-crop-handle[data-handle="se"] { top: 100%; left: 100%; cursor: nwse-resize; }
+
+.img-editor-section {
+    display: flex;
+    flex-direction: column;
+    gap: var(--space-2);
+}
+
+.img-editor-note {
+    font-size: 12px;
+    color: var(--color-text-tertiary, var(--color-text-secondary));
+    line-height: 1.5;
+}
+
+/* Mode-dependent option groups inside the watermark rows: children lay out
+   as if they were direct row items, and the whole group can be toggled. */
+.img-editor-wm-opts {
+    display: contents;
+}
+
+.img-editor-wm-opts.hidden {
+    display: none;
+}
+
+.img-editor-section-title {
+    font-size: 12px;
+    font-weight: 600;
+    color: var(--color-text-secondary);
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+.img-editor-section .tool-row input[type="range"] {
+    flex: 1;
+    min-width: 80px;
+    max-width: 160px;
+    accent-color: var(--color-accent);
+    cursor: pointer;
+}
+
+.img-dropzone-inline {
+    padding: var(--space-3);
+    min-height: auto;
+}
+
+.img-dropzone-inline .img-dropzone-hint {
+    flex-direction: row;
+    gap: var(--space-2);
+    font-size: 13px;
+}
+
 .toolbox-tabs {
     display: flex;
     flex-wrap: wrap;
@@ -1756,6 +2420,8 @@ body {
     padding: var(--space-6);
     margin-bottom: var(--space-6);
     justify-content: center;
+    flex-wrap: wrap;
+    row-gap: var(--space-3);
     gap: var(--space-4);
     box-shadow: inset 0 2px 4px rgba(0, 0, 0, 0.02);
 }
@@ -2399,16 +3065,22 @@ body {
 
 .date-parts-row {
     flex-wrap: nowrap;
-    justify-content: space-between;
+    gap: var(--space-2);
 }
 
-.date-parts-row .tool-label {
-    min-width: 50px;
+/* Groups trailing controls (convert button + result + unit) so they stay
+   together as a single visual unit within the row. */
+.tool-row-actions {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    flex: 1 1 auto;
+    min-width: 0;
 }
 
-.date-parts-row .tool-input.result {
-    min-width: 140px;
-    flex: 0 0 auto;
+.tool-row-actions .tool-input.result {
+    flex: 1;
+    min-width: 80px;
 }
 
 .tool-textarea {
@@ -2667,6 +3339,30 @@ body {
 }
 
 .mermaid-zoom-btn:active {
+    transform: translateY(0);
+}
+
+.mermaid-curve-btn {
+    padding: 4px 10px;
+    font-size: 12px;
+    font-weight: 500;
+    color: white;
+    background: #0f766e;
+    border: none;
+    border-radius: 4px;
+    cursor: pointer;
+    transition: all 0.15s ease;
+    display: flex;
+    align-items: center;
+    gap: 4px;
+}
+
+.mermaid-curve-btn:hover {
+    background: #0d9488;
+    transform: translateY(-1px);
+}
+
+.mermaid-curve-btn:active {
     transform: translateY(0);
 }
 
@@ -3846,4 +4542,333 @@ body {
 .code-diff-panel:fullscreen .cdiff-editor-container {
     min-height: 0;
     flex: 1;
+}
+
+/* ==================== Timestamp Tool: Multi-Timezone Support ==================== */
+
+/* Favorite timezones row - allow wrapping since the chip count is variable */
+.tz-favorites-row {
+    flex-wrap: wrap !important;
+    white-space: normal !important;
+}
+
+.tz-chip-bar {
+    display: flex;
+    align-items: center;
+    flex-wrap: wrap;
+    gap: var(--space-2);
+}
+
+.tz-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 4px 6px 4px 10px;
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 500;
+    color: var(--color-text-secondary);
+    white-space: nowrap;
+}
+
+.tz-chip-fixed {
+    padding-right: 10px;
+    background: var(--color-accent-subtle);
+    border-color: #bfdbfe;
+    color: #1d4ed8;
+}
+
+.tz-chip-remove {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 18px;
+    height: 18px;
+    padding: 0;
+    background: none;
+    border: none;
+    border-radius: 50%;
+    color: var(--color-text-tertiary);
+    font-size: 14px;
+    line-height: 1;
+    cursor: pointer;
+    transition: all var(--transition-fast);
+}
+
+.tz-chip-remove:hover {
+    background: #fee2e2;
+    color: #dc2626;
+}
+
+/* Live multi-timezone clock strip, sits under the flip-clock row */
+.tz-live-strip {
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: var(--space-2);
+    margin-bottom: var(--space-4);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* Unix -> Date multi-zone comparison list */
+.tz-result-list:empty {
+    display: none;
+}
+
+.tz-result-list {
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: 12px;
+    padding: var(--space-2);
+    margin: calc(var(--space-3) * -1) 0 var(--space-4);
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.04);
+}
+
+/* Shared row skeleton: zone dot -> zone name/IANA id -> date+time -> offset badge + copy.
+   Used by both the live clock strip and the Unix multi-zone comparison list so
+   the two surfaces share one consistent, polished look. */
+.tz-multizone-row {
+    display: flex;
+    align-items: center;
+    gap: var(--space-3);
+    padding: 10px var(--space-3);
+    border-radius: 8px;
+    transition: background var(--transition-fast);
+}
+
+.tz-multizone-row:hover {
+    background: #f8fafc;
+}
+
+.tz-multizone-row+.tz-multizone-row {
+    border-top: 1px solid var(--color-border);
+}
+
+.tz-multizone-dot {
+    flex-shrink: 0;
+    width: 8px;
+    height: 8px;
+    border-radius: 50%;
+    background: #cbd5e1;
+}
+
+.tz-multizone-row[data-key="local"] .tz-multizone-dot {
+    background: var(--color-accent);
+    box-shadow: 0 0 0 3px var(--color-accent-subtle);
+}
+
+.tz-multizone-zone {
+    display: flex;
+    flex-direction: column;
+    gap: 1px;
+    min-width: 150px;
+    flex-shrink: 0;
+}
+
+.tz-multizone-zone-label {
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--color-text-primary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tz-multizone-zone-sub {
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+.tz-multizone-datetime {
+    display: flex;
+    align-items: baseline;
+    gap: var(--space-2);
+    font-family: 'JetBrains Mono', 'Menlo', monospace;
+}
+
+.tz-multizone-date {
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+}
+
+.tz-multizone-time {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--color-text-primary);
+    letter-spacing: 0.2px;
+}
+
+.tz-multizone-trailing {
+    display: flex;
+    align-items: center;
+    gap: var(--space-2);
+    margin-left: auto;
+    flex-shrink: 0;
+}
+
+.tz-multizone-offset {
+    padding: 3px 9px;
+    background: var(--color-accent-subtle);
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    font-family: 'JetBrains Mono', 'Menlo', monospace;
+    color: #1d4ed8;
+    white-space: nowrap;
+}
+
+/* Small ghost copy button reused by the live strip and multi-zone result list */
+.tz-result-copy {
+    flex-shrink: 0;
+    padding: 3px 10px;
+    background: none;
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    color: var(--color-text-secondary);
+    font-size: 11px;
+    cursor: pointer;
+    white-space: nowrap;
+    transition: all var(--transition-fast);
+}
+
+.tz-result-copy:hover {
+    background: var(--color-bg-elevated);
+    border-color: var(--color-border-strong);
+    color: var(--color-text-primary);
+}
+
+.tz-result-copy.copied {
+    background: #dcfce7;
+    border-color: #86efac;
+    color: #15803d;
+}
+
+/* Small echo line under date/parts -> Unix rows, cross-checks against Local + UTC */
+.tz-echo-line {
+    margin: calc(var(--space-3) * -1) 0 var(--space-4) var(--space-5);
+    font-size: 12px;
+    color: var(--color-text-tertiary);
+    font-family: 'JetBrains Mono', 'Menlo', monospace;
+}
+
+.tz-echo-line:empty {
+    display: none;
+}
+
+/* Timezone conversion row */
+.tz-convert-row {
+    flex-wrap: wrap !important;
+}
+
+.tz-convert-arrow {
+    color: var(--color-text-tertiary);
+    font-size: 16px;
+    font-weight: 600;
+}
+
+/* Button-based "select" trigger that opens the searchable timezone picker */
+.tz-picker-trigger {
+    text-align: left;
+    font-family: inherit;
+    max-width: 160px;
+    overflow: hidden;
+    text-overflow: ellipsis;
+}
+
+/* Shared searchable timezone picker popover */
+.tz-picker {
+    position: fixed;
+    z-index: 2000;
+    width: 300px;
+    max-height: 380px;
+    display: flex;
+    flex-direction: column;
+    background: #ffffff;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    box-shadow: var(--shadow-lg);
+    overflow: hidden;
+}
+
+.tz-picker-search {
+    height: 38px;
+    padding: 0 var(--space-4);
+    border: none;
+    border-bottom: 1px solid var(--color-border);
+    font-size: 13px;
+    color: var(--color-text-primary);
+    background: #ffffff;
+    outline: none;
+    flex-shrink: 0;
+}
+
+.tz-picker-search:focus {
+    background: var(--color-accent-subtle);
+}
+
+.tz-picker-list {
+    overflow-y: auto;
+    flex: 1;
+}
+
+.tz-picker-group-label {
+    position: sticky;
+    top: 0;
+    padding: var(--space-2) var(--space-4);
+    background: var(--color-bg-elevated);
+    color: var(--color-text-tertiary);
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+}
+
+.tz-picker-item {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: var(--space-3);
+    width: 100%;
+    padding: var(--space-2) var(--space-4);
+    background: none;
+    border: none;
+    text-align: left;
+    cursor: pointer;
+    font-family: var(--font-sans);
+    transition: background var(--transition-fast);
+}
+
+.tz-picker-item:hover {
+    background: var(--color-bg-elevated);
+}
+
+.tz-picker-item-name {
+    font-size: 13px;
+    color: var(--color-text-primary);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+}
+
+.tz-picker-item-offset {
+    flex-shrink: 0;
+    font-family: 'JetBrains Mono', 'Menlo', monospace;
+    font-size: 11px;
+    color: var(--color-text-tertiary);
+}
+
+.tz-picker-empty {
+    padding: var(--space-5) var(--space-4);
+    text-align: center;
+    font-size: 13px;
+    color: var(--color-text-tertiary);
 }

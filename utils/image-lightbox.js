@@ -342,6 +342,40 @@ const ImageLightbox = {
     },
 
     /**
+     * Open the lightbox with a plain raster image (Data URL, Blob URL, or regular src).
+     * Automatically fits the image to the window if it's larger than the viewport.
+     * @param {string} src - Image source (data:, blob:, or http(s) URL)
+     * @param {string} [alt='']
+     */
+    openImage(src, alt = '') {
+        if (!src) return;
+
+        const img = document.createElement('img');
+        img.alt = alt;
+        img.src = src;
+
+        this.open(img, 'image');
+
+        const fit = () => {
+            if (!this.isOpen) return;
+            const wrapper = this.imageWrapper.firstElementChild;
+            if (!wrapper) return;
+            const rect = wrapper.getBoundingClientRect();
+            const contentRect = this.content.getBoundingClientRect();
+            if (rect.width > contentRect.width || rect.height > contentRect.height) {
+                this.fitToWindow();
+            }
+        };
+
+        const clonedImg = this.imageWrapper.firstElementChild;
+        if (clonedImg && clonedImg.complete) {
+            setTimeout(fit, 50);
+        } else if (clonedImg) {
+            clonedImg.addEventListener('load', () => setTimeout(fit, 50), { once: true });
+        }
+    },
+
+    /**
      * Close the lightbox
      */
     close() {
