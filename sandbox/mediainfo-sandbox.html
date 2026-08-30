@@ -1,0 +1,19 @@
+<!DOCTYPE html>
+<!-- Sandboxed page for mediainfo.js: its Emscripten embind glue generates
+     invokers with `new Function(...)`, which the MV3 extension-pages CSP
+     forbids ('wasm-unsafe-eval' only covers WASM, not JS string eval).
+     Chrome's sandbox pages get a relaxed CSP that allows it. The parent page
+     (index.html) embeds this in a hidden iframe and talks via postMessage. -->
+<html lang="zh-CN">
+
+<head>
+    <meta charset="UTF-8">
+    <title>MediaInfo Sandbox</title>
+</head>
+
+<body>
+    <script src="../lib/mediainfo/mediainfo.min.js"></script>
+    <script src="mediainfo-sandbox.js"></script>
+</body>
+
+</html>
