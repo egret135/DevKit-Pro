@@ -53,12 +53,14 @@
         modeJson: document.getElementById('modeJson'),
         modeToolbox: document.getElementById('modeToolbox'),
         modeImage: document.getElementById('modeImage'),
+        modeMedia: document.getElementById('modeMedia'),
         converterWorkspace: document.getElementById('converterWorkspace'),
         diffWorkspace: document.getElementById('diffWorkspace'),
         markdownWorkspace: document.getElementById('markdownWorkspace'),
         jsonWorkspace: document.getElementById('jsonWorkspace'),
         toolboxWorkspace: document.getElementById('toolboxWorkspace'),
         imageWorkspace: document.getElementById('imageWorkspace'),
+        mediaWorkspace: document.getElementById('mediaWorkspace'),
 
         // Markdown Elements
         markdownInput: document.getElementById('markdownInput'),
@@ -167,12 +169,14 @@
         if (elements.modeJson) elements.modeJson.classList.remove('active');
         if (elements.modeToolbox) elements.modeToolbox.classList.remove('active');
         if (elements.modeImage) elements.modeImage.classList.remove('active');
+        if (elements.modeMedia) elements.modeMedia.classList.remove('active');
         elements.converterWorkspace.classList.add('hidden');
         elements.diffWorkspace.classList.add('hidden');
         elements.markdownWorkspace.classList.add('hidden');
         if (elements.jsonWorkspace) elements.jsonWorkspace.classList.add('hidden');
         if (elements.toolboxWorkspace) elements.toolboxWorkspace.classList.add('hidden');
         if (elements.imageWorkspace) elements.imageWorkspace.classList.add('hidden');
+        if (elements.mediaWorkspace) elements.mediaWorkspace.classList.add('hidden');
 
         if (mode === 'converter') {
             elements.modeConverter.classList.add('active');
@@ -208,6 +212,11 @@
             elements.imageWorkspace.classList.remove('hidden');
             elements.converterOptions.style.visibility = 'hidden';
             setStatus('图片工具', 'ready');
+        } else if (mode === 'media') {
+            elements.modeMedia.classList.add('active');
+            elements.mediaWorkspace.classList.remove('hidden');
+            elements.converterOptions.style.visibility = 'hidden';
+            setStatus('音视频工具', 'ready');
         }
     }
 
@@ -456,6 +465,7 @@
         if (DevKit.JsonController) DevKit.JsonController.init(ctx);
         if (DevKit.ToolboxController) DevKit.ToolboxController.init();
         if (DevKit.ImageToolboxController) DevKit.ImageToolboxController.init();
+        if (DevKit.MediaToolboxController) DevKit.MediaToolboxController.init();
 
         // Shared event listeners
         elements.settingsBtn.addEventListener('click', () => showModal(true));
@@ -469,6 +479,7 @@
         elements.modeJson.addEventListener('click', () => switchMode('json'));
         elements.modeToolbox.addEventListener('click', () => switchMode('toolbox'));
         elements.modeImage.addEventListener('click', () => switchMode('image'));
+        elements.modeMedia.addEventListener('click', () => switchMode('media'));
 
         // Appearance instant preview
         elements.editorTheme.addEventListener('change', () => {

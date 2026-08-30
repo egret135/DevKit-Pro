@@ -80,6 +80,7 @@
                         <button id="modeJson" class="mode-btn">JSON 工具</button>
                         <button id="modeToolbox" class="mode-btn">工具箱</button>
                         <button id="modeImage" class="mode-btn">图片工具</button>
+                        <button id="modeMedia" class="mode-btn">音视频工具</button>
                     </div>
                     <div class="separator"></div>
 
@@ -1417,6 +1418,338 @@
                     </div>
                 </div>
             </div>
+
+            <!-- Media (Audio/Video) Tools Workspace -->
+            <div id="mediaWorkspace" class="workspace media-workspace hidden">
+                <!-- Tool Tabs (Top) -->
+                <div class="media-tabs">
+                    <button class="media-tab active" data-tool="record">
+                        <span class="tool-icon">🎥</span>
+                        <span>录屏/录制</span>
+                    </button>
+                    <button class="media-tab" data-tool="frame">
+                        <span class="tool-icon">🎞️</span>
+                        <span>视频截帧</span>
+                    </button>
+                    <button class="media-tab" data-tool="trim">
+                        <span class="tool-icon">🎚️</span>
+                        <span>音频剪切</span>
+                    </button>
+                    <button class="media-tab" data-tool="info">
+                        <span class="tool-icon">ℹ️</span>
+                        <span>媒体信息</span>
+                    </button>
+                    <button class="media-tab" data-tool="tts">
+                        <span class="tool-icon">🗣️</span>
+                        <span>文字转语音</span>
+                    </button>
+                    <button class="media-tab" data-tool="gif">
+                        <span class="tool-icon">🎬</span>
+                        <span>视频转GIF</span>
+                    </button>
+                    <button class="media-tab" data-tool="convert">
+                        <span class="tool-icon">🎵</span>
+                        <span>音频转换</span>
+                    </button>
+                    <button class="media-tab" data-tool="compress">
+                        <span class="tool-icon">📦</span>
+                        <span>视频压缩</span>
+                    </button>
+                </div>
+
+                <!-- Tool Panel (Bottom) -->
+                <div class="media-tool-content">
+                    <!-- Screen / Camera Recording -->
+                    <div id="mediaPanelRecord" class="media-tool-panel tech-panel active">
+                        <div class="tool-row">
+                            <span class="tool-label">录制来源</span>
+                            <select id="mediaRecSource" class="tool-select">
+                                <option value="screen" selected>屏幕/窗口</option>
+                                <option value="camera">摄像头</option>
+                            </select>
+                            <label class="code-diff-option">
+                                <input id="mediaRecMic" type="checkbox">
+                                <span>录制麦克风</span>
+                            </label>
+                            <label class="code-diff-option" id="mediaRecSysAudioWrap">
+                                <input id="mediaRecSysAudio" type="checkbox">
+                                <span>录制系统声音</span>
+                            </label>
+                            <button id="mediaRecStartBtn" class="tool-btn-action tech-btn primary">开始录制</button>
+                            <button id="mediaRecPauseBtn" class="tool-btn-action tech-btn" disabled>暂停</button>
+                            <button id="mediaRecStopBtn" class="tool-btn-action tech-btn" disabled>停止</button>
+                        </div>
+                        <div class="tool-row">
+                            <span id="mediaRecStatus" class="media-rec-status hidden">
+                                <span class="media-rec-dot"></span>
+                                <span id="mediaRecTimer">00:00</span>
+                            </span>
+                            <span id="mediaRecMeta" class="img-meta"></span>
+                        </div>
+                        <div class="tool-row">
+                            <video id="mediaRecPreview" class="media-video hidden" muted autoplay playsinline></video>
+                            <video id="mediaRecPlayback" class="media-video hidden" controls></video>
+                        </div>
+                        <div class="tool-row">
+                            <button id="mediaRecDownloadBtn" class="tool-btn-action tech-btn hidden">下载 WebM</button>
+                        </div>
+                    </div>
+
+                    <!-- Video Frame Capture -->
+                    <div id="mediaPanelFrame" class="media-tool-panel tech-panel">
+                        <div class="tool-row">
+                            <div id="mediaFrameDropzone" class="img-dropzone">
+                                <div id="mediaFrameHint" class="img-dropzone-hint">
+                                    <span class="img-dropzone-icon">🎞️</span>
+                                    <span>点击选择视频 / 拖拽到此处</span>
+                                    <span class="img-dropzone-hint-sub">支持 MP4 / WebM 等浏览器可播放的格式</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="mediaFrameWork" class="hidden">
+                            <div class="tool-row">
+                                <video id="mediaFrameVideo" class="media-video" controls></video>
+                            </div>
+                            <div class="tool-row">
+                                <button id="mediaFramePrevBtn" class="tool-btn-action tech-btn">← 上一帧</button>
+                                <button id="mediaFrameNextBtn" class="tool-btn-action tech-btn">下一帧 →</button>
+                                <span id="mediaFrameTime" class="img-meta">00:00.000</span>
+                                <button id="mediaFrameCaptureBtn" class="tool-btn-action tech-btn primary">截取当前帧</button>
+                                <button id="mediaFrameDownloadBtn" class="tool-btn-action tech-btn" disabled>下载 PNG</button>
+                            </div>
+                            <div class="tool-row">
+                                <img id="mediaFrameResult" class="img-dropzone-preview img-lightbox-trigger hidden" alt="截帧结果" title="点击查看大图">
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Audio Waveform Trim -->
+                    <div id="mediaPanelTrim" class="media-tool-panel tech-panel">
+                        <div class="tool-row">
+                            <div id="mediaTrimDropzone" class="img-dropzone">
+                                <div id="mediaTrimHint" class="img-dropzone-hint">
+                                    <span class="img-dropzone-icon">🎚️</span>
+                                    <span>点击选择音频 / 拖拽到此处</span>
+                                    <span class="img-dropzone-hint-sub">支持 MP3 / WAV / OGG / M4A 等浏览器可解码的格式</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="mediaTrimWork" class="hidden">
+                            <div class="tool-row">
+                                <span id="mediaTrimMeta" class="img-meta"></span>
+                            </div>
+                            <div class="media-wave-wrap" id="mediaTrimWaveWrap">
+                                <canvas id="mediaTrimWave"></canvas>
+                                <div id="mediaTrimSelection" class="media-wave-selection">
+                                    <div class="media-wave-handle" data-handle="start"></div>
+                                    <div class="media-wave-handle" data-handle="end"></div>
+                                </div>
+                            </div>
+                            <div class="tool-row">
+                                <span class="tool-label">起点(s)</span>
+                                <input id="mediaTrimStart" type="number" class="tool-input" style="width:90px" min="0" step="0.01">
+                                <span class="tool-label">终点(s)</span>
+                                <input id="mediaTrimEnd" type="number" class="tool-input" style="width:90px" min="0" step="0.01">
+                                <button id="mediaTrimPlayBtn" class="tool-btn-action tech-btn">试听选区</button>
+                                <button id="mediaTrimStopBtn" class="tool-btn-action tech-btn" disabled>停止</button>
+                                <button id="mediaTrimWavBtn" class="tool-btn-action tech-btn primary">导出 WAV</button>
+                                <button id="mediaTrimMp3Btn" class="tool-btn-action tech-btn primary">导出 MP3</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Media Info -->
+                    <div id="mediaPanelInfo" class="media-tool-panel tech-panel">
+                        <div class="tool-row">
+                            <div id="mediaInfoDropzone" class="img-dropzone">
+                                <div id="mediaInfoHint" class="img-dropzone-hint">
+                                    <span class="img-dropzone-icon">ℹ️</span>
+                                    <span>点击选择音视频文件 / 拖拽到此处</span>
+                                    <span class="img-dropzone-hint-sub">查看时长、分辨率、编码格式、码率、声道等信息</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="mediaInfoResult" class="hidden">
+                            <div class="tool-row">
+                                <span id="mediaInfoBasic" class="img-meta"></span>
+                            </div>
+                            <div class="img-exif-table-wrap">
+                                <table id="mediaInfoTable" class="img-exif-table"></table>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Text To Speech -->
+                    <div id="mediaPanelTts" class="media-tool-panel tech-panel">
+                        <div class="tool-row">
+                            <textarea id="mediaTtsText" class="tool-textarea" placeholder="输入要朗读的文本"></textarea>
+                        </div>
+                        <div class="tool-row">
+                            <span class="tool-label">音色</span>
+                            <select id="mediaTtsVoice" class="tool-select" style="max-width:340px"></select>
+                        </div>
+                        <div class="tool-row img-slider-row">
+                            <span class="tool-label">语速</span>
+                            <input id="mediaTtsRate" type="range" min="0.5" max="2" step="0.1" value="1">
+                            <span id="mediaTtsRateValue" class="img-slider-value">1.0x</span>
+                            <span class="tool-label">音调</span>
+                            <input id="mediaTtsPitch" type="range" min="0.5" max="2" step="0.1" value="1">
+                            <span id="mediaTtsPitchValue" class="img-slider-value">1.0</span>
+                            <span class="tool-label">音量</span>
+                            <input id="mediaTtsVolume" type="range" min="0" max="1" step="0.05" value="1">
+                            <span id="mediaTtsVolumeValue" class="img-slider-value">100%</span>
+                        </div>
+                        <div class="tool-row">
+                            <button id="mediaTtsPlayBtn" class="tool-btn-action tech-btn primary">播放</button>
+                            <button id="mediaTtsPauseBtn" class="tool-btn-action tech-btn" disabled>暂停</button>
+                            <button id="mediaTtsStopBtn" class="tool-btn-action tech-btn" disabled>停止</button>
+                            <span id="mediaTtsStatus" class="img-meta"></span>
+                        </div>
+                        <div class="img-editor-note">Web Speech API 仅支持在线试听，无法导出音频文件；可用音色由系统与浏览器提供。</div>
+                    </div>
+
+                    <!-- Video to GIF -->
+                    <div id="mediaPanelGif" class="media-tool-panel tech-panel">
+                        <div class="tool-row">
+                            <div id="mediaGifDropzone" class="img-dropzone">
+                                <div id="mediaGifHint" class="img-dropzone-hint">
+                                    <span class="img-dropzone-icon">🎬</span>
+                                    <span>点击选择视频 / 拖拽到此处</span>
+                                    <span class="img-dropzone-hint-sub">选择起止时间与帧率，生成 GIF 动图</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="mediaGifWork" class="hidden">
+                            <div class="tool-row">
+                                <video id="mediaGifVideo" class="media-video" controls></video>
+                            </div>
+                            <div class="tool-row">
+                                <span class="tool-label">起点(s)</span>
+                                <input id="mediaGifStart" type="number" class="tool-input" style="width:80px" min="0" step="0.1" value="0">
+                                <span class="tool-label">终点(s)</span>
+                                <input id="mediaGifEnd" type="number" class="tool-input" style="width:80px" min="0" step="0.1">
+                                <span class="tool-label">帧率</span>
+                                <select id="mediaGifFps" class="tool-select">
+                                    <option value="5">5 fps</option>
+                                    <option value="10" selected>10 fps</option>
+                                    <option value="15">15 fps</option>
+                                </select>
+                                <span class="tool-label">宽度</span>
+                                <select id="mediaGifWidth" class="tool-select">
+                                    <option value="240">240px</option>
+                                    <option value="320" selected>320px</option>
+                                    <option value="480">480px</option>
+                                    <option value="640">640px</option>
+                                </select>
+                                <button id="mediaGifRunBtn" class="tool-btn-action tech-btn primary">生成 GIF</button>
+                                <span id="mediaGifStatus" class="img-meta"></span>
+                            </div>
+                            <div class="tool-row">
+                                <img id="mediaGifResult" class="img-dropzone-preview img-lightbox-trigger hidden" alt="GIF 预览" title="点击查看大图">
+                            </div>
+                            <div class="tool-row">
+                                <span id="mediaGifMeta" class="img-meta hidden"></span>
+                                <button id="mediaGifDownloadBtn" class="tool-btn-action tech-btn hidden">下载 GIF</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Audio Format Conversion -->
+                    <div id="mediaPanelConvert" class="media-tool-panel tech-panel">
+                        <div class="tool-row">
+                            <div id="mediaConvDropzone" class="img-dropzone">
+                                <div id="mediaConvHint" class="img-dropzone-hint">
+                                    <span class="img-dropzone-icon">🎵</span>
+                                    <span>点击选择音频 / 拖拽到此处</span>
+                                    <span class="img-dropzone-hint-sub">浏览器可解码的格式（MP3/WAV/OGG/M4A/FLAC…）转 WAV 或 MP3</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="mediaConvWork" class="hidden">
+                            <div class="tool-row">
+                                <span id="mediaConvMeta" class="img-meta"></span>
+                            </div>
+                            <div class="tool-row">
+                                <span class="tool-label">目标格式</span>
+                                <select id="mediaConvFormat" class="tool-select">
+                                    <option value="wav" selected>WAV</option>
+                                    <option value="mp3">MP3</option>
+                                </select>
+                                <span id="mediaConvBitrateWrap" class="img-editor-wm-opts hidden">
+                                    <span class="tool-label">码率</span>
+                                    <select id="mediaConvBitrate" class="tool-select">
+                                        <option value="128">128 kbps</option>
+                                        <option value="192" selected>192 kbps</option>
+                                        <option value="320">320 kbps</option>
+                                    </select>
+                                </span>
+                                <button id="mediaConvRunBtn" class="tool-btn-action tech-btn primary">转换</button>
+                                <span id="mediaConvStatus" class="img-meta"></span>
+                            </div>
+                            <div class="tool-row">
+                                <audio id="mediaConvResultAudio" class="media-audio hidden" controls></audio>
+                            </div>
+                            <div class="tool-row">
+                                <span id="mediaConvResultMeta" class="img-meta hidden"></span>
+                                <button id="mediaConvDownloadBtn" class="tool-btn-action tech-btn hidden">下载</button>
+                            </div>
+                        </div>
+                    </div>
+
+                    <!-- Video Compress / Transcode -->
+                    <div id="mediaPanelCompress" class="media-tool-panel tech-panel">
+                        <div class="tool-row">
+                            <div id="mediaCompDropzone" class="img-dropzone">
+                                <div id="mediaCompHint" class="img-dropzone-hint">
+                                    <span class="img-dropzone-icon">📦</span>
+                                    <span>点击选择视频 / 拖拽到此处</span>
+                                    <span class="img-dropzone-hint-sub">WebCodecs 硬件编码，输出压缩后的 MP4（H.264/AAC）</span>
+                                </div>
+                            </div>
+                        </div>
+                        <div id="mediaCompWork" class="hidden">
+                            <div class="tool-row">
+                                <video id="mediaCompVideo" class="media-video" controls></video>
+                            </div>
+                            <div class="tool-row">
+                                <span id="mediaCompSrcMeta" class="img-meta"></span>
+                            </div>
+                            <div class="tool-row">
+                                <span class="tool-label">分辨率</span>
+                                <select id="mediaCompRes" class="tool-select">
+                                    <option value="0" selected>原始</option>
+                                    <option value="1080">1080p</option>
+                                    <option value="720">720p</option>
+                                    <option value="480">480p</option>
+                                </select>
+                                <span class="tool-label">视频码率</span>
+                                <select id="mediaCompBitrate" class="tool-select">
+                                    <option value="8000000">8 Mbps（高）</option>
+                                    <option value="4000000" selected>4 Mbps（中）</option>
+                                    <option value="2000000">2 Mbps（低）</option>
+                                    <option value="1000000">1 Mbps（极低）</option>
+                                </select>
+                                <label class="code-diff-option">
+                                    <input id="mediaCompKeepAudio" type="checkbox" checked>
+                                    <span>保留音轨</span>
+                                </label>
+                                <button id="mediaCompRunBtn" class="tool-btn-action tech-btn primary">开始压缩</button>
+                                <span id="mediaCompStatus" class="img-meta"></span>
+                            </div>
+                            <div class="media-progress hidden" id="mediaCompProgress">
+                                <div class="media-progress-bar" id="mediaCompProgressBar"></div>
+                            </div>
+                            <div class="tool-row">
+                                <video id="mediaCompResultVideo" class="media-video hidden" controls></video>
+                            </div>
+                            <div class="tool-row">
+                                <span id="mediaCompResultMeta" class="img-meta hidden"></span>
+                                <button id="mediaCompDownloadBtn" class="tool-btn-action tech-btn hidden">下载 MP4</button>
+                            </div>
+                        </div>
+                    </div>
+                </div>
+            </div>
         </main>
 
         <!-- Shared searchable timezone picker popover (repositioned via JS next to its trigger) -->
@@ -1644,6 +1977,23 @@
     <script src="lib/pixelmatch.min.js"></script>
     <script src="tools/image-tools/diff-tool.js"></script>
     <script src="tools/image-toolbox.js"></script>
+    <script src="utils/media-utils.js"></script>
+    <script src="tools/media-tools/record-tool.js"></script>
+    <script src="tools/media-tools/frame-tool.js"></script>
+    <script src="tools/media-tools/trim-tool.js"></script>
+    <script src="tools/media-tools/tts-tool.js"></script>
+    <!-- mediainfo.js needs 'unsafe-eval' (embind), so it runs in a sandboxed
+         iframe with a relaxed CSP instead of on this page. -->
+    <iframe id="mediaInfoSandbox" src="sandbox/mediainfo-sandbox.html" style="display:none"
+        title="MediaInfo Sandbox"></iframe>
+    <script src="tools/media-tools/info-tool.js"></script>
+    <script src="lib/gif.js"></script>
+    <script src="tools/media-tools/gif-tool.js"></script>
+    <script src="lib/lamejs.min.js"></script>
+    <script src="tools/media-tools/convert-tool.js"></script>
+    <script src="lib/mp4-muxer.min.js"></script>
+    <script src="tools/media-tools/compress-tool.js"></script>
+    <script src="tools/media-toolbox.js"></script>
     <script src="config/settings.js"></script>
 
     <!-- Controllers -->

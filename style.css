@@ -1733,7 +1733,8 @@ body {
     height: 100%;
 }
 
-.image-workspace {
+.image-workspace,
+.media-workspace {
     display: flex;
     flex-direction: column;
     height: 100%;
@@ -1742,8 +1743,10 @@ body {
 /* Image Tools tab bar + panels mirror .toolbox-tab/.tool-panel visually,
    but use distinct class names so tools/image-toolbox.js can scope its
    querySelectorAll calls without colliding with tools/toolbox.js's
-   global .toolbox-tab/.tool-panel selectors. */
-.img-tabs {
+   global .toolbox-tab/.tool-panel selectors. Media Tools (.media-*) share
+   the exact same look but keep their own hook classes for the same reason. */
+.img-tabs,
+.media-tabs {
     display: flex;
     flex-wrap: wrap;
     gap: var(--space-2);
@@ -1753,7 +1756,8 @@ body {
     flex-shrink: 0;
 }
 
-.img-tab {
+.img-tab,
+.media-tab {
     display: flex;
     align-items: center;
     gap: var(--space-2);
@@ -1768,19 +1772,22 @@ body {
     color: var(--color-text-secondary);
 }
 
-.img-tab:hover {
+.img-tab:hover,
+.media-tab:hover {
     background: var(--color-bg-elevated);
     border-color: var(--color-border-strong);
     color: var(--color-text-primary);
 }
 
-.img-tab.active {
+.img-tab.active,
+.media-tab.active {
     background: var(--color-accent-subtle);
     border-color: var(--color-accent);
     color: var(--color-accent);
 }
 
-.img-tool-content {
+.img-tool-content,
+.media-tool-content {
     flex: 1;
     overflow-y: auto;
     padding: var(--space-6);
@@ -1794,14 +1801,16 @@ body {
     align-items: flex-start;
 }
 
-.img-tool-panel {
+.img-tool-panel,
+.media-tool-panel {
     display: none;
     max-width: 1200px;
     width: 100%;
     min-width: 0;
 }
 
-.img-tool-panel.active {
+.img-tool-panel.active,
+.media-tool-panel.active {
     display: block;
 }
 
@@ -4871,4 +4880,127 @@ body {
     text-align: center;
     font-size: 13px;
     color: var(--color-text-tertiary);
+}
+
+/* ==================== Media Tools - Shared Components ==================== */
+
+.media-video {
+    display: block;
+    width: 100%;
+    max-width: 840px;
+    max-height: 55vh;
+    min-width: 0;
+    background: #000;
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+}
+
+.media-audio {
+    display: block;
+    width: 100%;
+    max-width: 640px;
+    min-width: 0;
+}
+
+/* Recording state: blinking red dot + monospace elapsed timer */
+.media-rec-status {
+    display: inline-flex;
+    align-items: center;
+    gap: var(--space-2);
+    font-family: 'JetBrains Mono', 'Menlo', monospace;
+    font-size: 13px;
+    color: var(--color-text-primary);
+}
+
+.media-rec-dot {
+    width: 10px;
+    height: 10px;
+    border-radius: 50%;
+    background: #ef4444;
+    animation: mediaRecBlink 1s ease-in-out infinite;
+}
+
+.media-rec-status.paused .media-rec-dot {
+    animation: none;
+    background: var(--color-text-secondary);
+}
+
+@keyframes mediaRecBlink {
+    50% {
+        opacity: 0.25;
+    }
+}
+
+/* Waveform strip with a draggable selection window (audio trim tool) */
+.media-wave-wrap {
+    position: relative;
+    width: 100%;
+    height: 140px;
+    margin-bottom: var(--space-4);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: var(--radius-md);
+    overflow: hidden;
+}
+
+.media-wave-wrap canvas {
+    display: block;
+    width: 100%;
+    height: 100%;
+}
+
+.media-wave-selection {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    background: rgba(59, 130, 246, 0.18);
+    border-left: 2px solid var(--color-accent);
+    border-right: 2px solid var(--color-accent);
+    cursor: move;
+}
+
+.media-wave-handle {
+    position: absolute;
+    top: 0;
+    bottom: 0;
+    width: 12px;
+}
+
+.media-wave-handle[data-handle="start"] {
+    left: -7px;
+    cursor: ew-resize;
+}
+
+.media-wave-handle[data-handle="end"] {
+    right: -7px;
+    cursor: ew-resize;
+}
+
+/* Media info: track group header rows inside the reused exif table */
+.img-exif-table tr.media-info-track td {
+    background: var(--color-accent-subtle);
+    color: var(--color-accent);
+    font-weight: 600;
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.03em;
+}
+
+/* Determinate progress strip (video compress / GIF encode) */
+.media-progress {
+    width: 100%;
+    height: 8px;
+    margin-bottom: var(--space-4);
+    background: var(--color-bg-secondary);
+    border: 1px solid var(--color-border);
+    border-radius: 999px;
+    overflow: hidden;
+}
+
+.media-progress-bar {
+    width: 0%;
+    height: 100%;
+    background: var(--color-accent);
+    border-radius: 999px;
+    transition: width 0.15s linear;
 }
