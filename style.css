@@ -4172,18 +4172,23 @@ body {
     gap: var(--space-4);
     flex: 1;
     min-height: 0;
+    min-width: 0;
+    overflow: hidden;
 }
 
 .json-compare-inputs .json-diff-col {
     display: flex;
     flex-direction: column;
     gap: var(--space-2);
+    min-width: 0;
     min-height: 0;
+    overflow: hidden;
 }
 
 .json-cm-diff-shell {
     display: flex;
     flex: 1;
+    min-width: 0;
     min-height: 280px;
     border: 1px solid var(--color-border);
     border-radius: var(--radius-sm);
@@ -4206,16 +4211,27 @@ body {
     display: flex;
     flex-direction: column;
     position: relative;
+    overflow: hidden;
 }
 
 .json-cm-diff-body .CodeMirror {
-    flex: 1;
+    position: absolute;
+    top: 0;
+    left: 0;
+    right: 0;
+    bottom: 0;
     height: 100% !important;
+    width: 100% !important;
     background: transparent;
 }
 
 .json-cm-diff-body .CodeMirror-scroll {
     min-height: 100%;
+    overflow-x: auto !important;
+}
+
+.json-cm-diff-body .CodeMirror-wrap .CodeMirror-scroll {
+    overflow-x: hidden !important;
 }
 
 .json-cm-diff-shell .CodeMirror-linebackground.json-cm-line-del {
