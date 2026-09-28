@@ -66,13 +66,21 @@
 
 ## 🚀 安装
 
-### Chrome / Edge
+### Chrome 应用商店（推荐）
+
+上架材料与提交流程见 [`store/PUBLISH.md`](store/PUBLISH.md)。本地打发布包：
+
+```bash
+bash scripts/pack-extension.sh
+```
+
+### Chrome / Edge（开发者模式）
 
 1. 下载或克隆此仓库
 2. 打开 `chrome://extensions/`
 3. 开启右上角"开发者模式"
 4. 点击"加载已解压的扩展程序"
-5. 选择 `devkit-pro` 目录
+5. 选择 `DevKit-Pro` 目录
 
 ### Firefox
 

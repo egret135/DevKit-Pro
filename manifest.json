@@ -2,8 +2,9 @@
   "manifest_version": 3,
   "name": "DevKit Pro",
   "version": "2.0.0",
-  "description": "Developer toolkit: DDL/JSON to Go Struct, DDL Schema Diff, and Markdown Preview with Mermaid diagrams",
+  "description": "Offline developer toolkit: DDL/JSON → Go/Protobuf, schema diff, Markdown+Mermaid, JSON tools, image & media utilities.",
   "action": {
+    "default_title": "Open DevKit Pro",
     "default_icon": {
       "16": "icons/icon16.png",
       "48": "icons/icon48.png",
