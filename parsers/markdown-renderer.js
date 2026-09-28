@@ -230,8 +230,10 @@ const MarkdownRenderer = {
     },
 
     /**
-     * Preprocess math syntax: $$...$$ (display) and $...$ (inline).
-     * Extracted before marked.parse() so LaTeX chars (\, _, {, }) survive untouched,
+     * Preprocess math syntax before marked.parse():
+     *   display: $$...$$  and  \[...\]
+     *   inline:  $...$    and  \(...\)
+     * Extracted so LaTeX chars (\, _, {, }) survive untouched,
      * then rendered with KaTeX and reinserted as placeholders.
      * @param {string} text
      * @returns {{ text: string, mathBlocks: Array }}
@@ -245,24 +247,64 @@ const MarkdownRenderer = {
         const protectedRanges = this.getProtectedRanges(text);
         let counter = 0;
 
-        // Block math ($$...$$) is tried first so it isn't split into two inline matches.
-        const mathRegex = /\$\$([\s\S]+?)\$\$|\$(?!\s)((?:\\\$|[^\n$])+?)(?<!\s)\$/g;
+        // Order matters: $$ / \[ \] first so they aren't eaten by $ / \( \) matchers.
+        const mathRegex =
+            /\$\$([\s\S]+?)\$\$|\\\[([\s\S]+?)\\\]|\\\(([\s\S]+?)\\\)|\$(?!\s)((?:\\\$|[^\n$])+?)(?<!\s)\$/g;
 
-        const result = text.replace(mathRegex, (match, blockExpr, inlineExpr, offset) => {
-            if (this.isInProtectedRange(offset, protectedRanges)) return match;
+        const result = text.replace(
+            mathRegex,
+            (match, dollarBlock, bracketBlock, parenInline, dollarInline, offset) => {
+                if (this.isInProtectedRange(offset, protectedRanges)) return match;
 
-            const isDisplay = blockExpr !== undefined;
-            const expr = (isDisplay ? blockExpr : inlineExpr).trim();
-            if (!expr) return match;
+                const isDisplay = dollarBlock !== undefined || bracketBlock !== undefined;
+                const expr = (dollarBlock ?? bracketBlock ?? parenInline ?? dollarInline).trim();
+                if (!expr) return match;
 
-            const placeholder = `MATH_BLOCK_${counter}_END`;
-            mathBlocks.push({ expr, display: isDisplay, placeholder });
-            counter++;
+                let delim;
+                if (dollarBlock !== undefined) delim = '$$';
+                else if (bracketBlock !== undefined) delim = '\\[\\]';
+                else if (parenInline !== undefined) delim = '\\(\\)';
+                else delim = '$';
 
-            return isDisplay ? `\n\n${placeholder}\n\n` : placeholder;
-        });
+                const placeholder = `MATH_BLOCK_${counter}_END`;
+                mathBlocks.push({ expr, display: isDisplay, delim, placeholder });
+                counter++;
+
+                return isDisplay ? `\n\n${placeholder}\n\n` : placeholder;
+            }
+        );
 
         return { text: result, mathBlocks };
+    },
+
+    /**
+     * Format original math source for error fallback display.
+     * @param {{ expr: string, display: boolean, delim?: string }} block
+     * @returns {string}
+     */
+    formatMathSource(block) {
+        switch (block.delim) {
+            case '\\[\\]':
+                return `\\[${block.expr}\\]`;
+            case '\\(\\)':
+                return `\\(${block.expr}\\)`;
+            case '$$':
+                return `$$${block.expr}$$`;
+            default:
+                return block.display ? `$$${block.expr}$$` : `$${block.expr}$`;
+        }
+    },
+
+    /**
+     * Allow Markdown-style **bold** inside math expressions by mapping to \mathbf{...}.
+     * Outside math, marked already handles **bold** / __bold__.
+     * @param {string} expr
+     * @returns {string}
+     */
+    normalizeMathMarkdownBold(expr) {
+        // **...** → \mathbf{...}（公式内 Markdown 加粗）
+        // Avoid matching a single * (LaTeX multiplication) or empty ** **.
+        return expr.replace(/\*\*([^*\n]+?)\*\*/g, '\\mathbf{$1}');
     },
 
     /**
@@ -279,13 +321,14 @@ const MarkdownRenderer = {
         for (const block of mathBlocks) {
             let rendered;
             try {
-                rendered = katex.renderToString(block.expr, {
+                const expr = this.normalizeMathMarkdownBold(block.expr);
+                rendered = katex.renderToString(expr, {
                     throwOnError: false,
                     displayMode: block.display,
                     strict: 'ignore'
                 });
             } catch (error) {
-                const source = block.display ? `$$${block.expr}$$` : `$${block.expr}$`;
+                const source = this.formatMathSource(block);
                 rendered = `<span class="markdown-math-error" title="${this.escapeHtml(error.message || '公式渲染失败')}">${this.escapeHtml(source)}</span>`;
             }
 
@@ -361,7 +404,7 @@ const MarkdownRenderer = {
         // Step 1: Preprocess GitHub Alert syntax
         const { text: alertProcessedText, alertBlocks } = this.preprocessAlerts(markdownText);
 
-        // Step 1b: Preprocess math syntax ($$...$$ / $...$) so marked doesn't mangle LaTeX
+        // Step 1b: Preprocess math ($$ / \[ \] / $ / \( \)) so marked doesn't mangle LaTeX
         const { text: mathProcessedText, mathBlocks } = this.preprocessMath(alertProcessedText);
 
         // Step 2: Extract mermaid code blocks and replace with unique placeholders
