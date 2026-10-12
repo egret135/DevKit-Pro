@@ -1,6 +1,6 @@
 # DevKit Pro Privacy Policy / 隐私政策
 
-**Last updated / 更新日期:** 2026-09-28  
+**Last updated / 更新日期:** 2026-10-12  
 **Product / 产品:** DevKit Pro (Chrome Extension)  
 **Developer / 开发者:** egret135  
 **Contact / 联系:** Open an issue at [github.com/egret135/DevKit-Pro](https://github.com/egret135/DevKit-Pro/issues)
@@ -38,8 +38,9 @@ Processing (formatting, conversion, preview, export, hashing, etc.) happens **lo
 | Permission | Why it is needed |
 |------------|------------------|
 | `storage` | Save preferences and options on your device |
-| `clipboardWrite` | Copy generated code / results when you click Copy |
 | `downloads` | Save exported files (e.g. Go/Protobuf, PNG/PDF, images) to your computer when you choose to download |
+
+Copy uses the browser clipboard API only when you click Copy. The extension does not request the `clipboardWrite` permission.
 
 The extension opens its own page when you click the toolbar icon. It does not request broad access to browse your web history or read arbitrary websites.
 
@@ -92,8 +93,9 @@ DevKit Pro 是一款**以本地运行为主**的开发者工具扩展，在浏�
 | 权限 | 用途 |
 |------|------|
 | `storage` | 在本地保存偏好与选项 |
-| `clipboardWrite` | 在你点击「复制」时写入剪贴板 |
 | `downloads` | 在你选择导出/下载时保存文件到本机 |
+
+复制使用浏览器剪贴板接口，仅在你点击「复制」时发生。扩展不申请 `clipboardWrite` 权限。
 
 点击工具栏图标会打开扩展自身页面；扩展不申请读取浏览历史或任意网站内容的广泛权限。
 

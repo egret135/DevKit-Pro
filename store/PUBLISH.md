@@ -37,7 +37,7 @@ https://chrome.google.com/webstore/devconsole
 | 语言 | 中文或 English |
 | 图标 | `icons/icon128.png` |
 | 截图 | 至少 1 张（建议 1280×800），见下方截图建议 |
-| 隐私政策 URL | `https://github.com/egret135/DevKit-Pro/blob/main/docs/privacy-policy.md` |
+| 隐私政策 URL | `https://cdn.jsdelivr.net/gh/egret135/DevKit-Pro@main/docs/privacy-policy.html` |
 
 ## 4. Privacy practices（隐私问卷）
 
@@ -64,6 +64,17 @@ https://chrome.google.com/webstore/devconsole
 1. 修改 `manifest.json` 的 `version`（必须递增，如 `2.0.1`）  
 2. `bash scripts/pack-extension.sh`  
 3. 同一商品上传新包 → 提交审核  
+
+## 8. 曾被拒过的问题
+
+### 远程托管代码
+若写 **Manifest V3 product contains remotely hosted code**：
+- 不能引用 `fonts.googleapis.com` 等 CDN（已去掉 Google Fonts）
+- 打包库里不能出现会加载的远程脚本地址。jsPDF 曾内置 `cdnjs.cloudflare.com/.../pdfobject.min.js`，2.0.3 已去掉
+- 隐私页选「未使用远程代码」
+
+### 说明关键字过多
+若写 **产品说明中有过多关键字 / Too many keywords**：不要用逗号串一堆标签（如 `DDL/JSON, schema diff, Markdown+Mermaid...`）。请改用 `store/listing.md` 里的自然句短介绍与详细介绍，并确保 `manifest.json` 的 `description` 与短介绍一致。
 
 ---
 
