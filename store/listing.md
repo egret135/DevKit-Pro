@@ -23,7 +23,6 @@ DevKit Pro 是一款在浏览器中本地运行的开发者工作台。你可以
 主要功能包括：
 
 把数据库表结构或 JSON 转成 Go 结构体与 Protocol Buffer 定义。  
-对比两份 DDL，并生成可用的 ALTER 语句。  
 实时预览 Markdown，支持图表与数学公式，也可导出图片或 PDF。  
 格式化与对比 JSON，并提供时间戳、编解码、哈希、正则等常用小工具。  
 在本地处理图片与音视频相关任务。
@@ -36,7 +35,6 @@ DevKit Pro 是一款在浏览器中本地运行的开发者工作台。你可以
 DevKit Pro is a developer workbench that runs entirely in your browser. It helps you convert data structures, preview documents, and finish everyday coding chores without sending your content to a remote server.
 
 You can turn database schemas or JSON into Go structs and Protocol Buffer definitions.  
-You can compare two DDL drafts and generate ALTER statements.  
 You can preview Markdown with diagrams and math, then export images or PDF.  
 You can format and compare JSON, and use small utilities such as timestamp conversion, encoding helpers, hashing, and regex testing.  
 Image and media helpers also run locally on your device.

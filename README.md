@@ -1,6 +1,6 @@
 # DevKit Pro
 
-一个强大的开发者工具集，支持 DDL/JSON 转 Go Struct、DDL 差异对比、Markdown 预览与导出等功能。
+一个强大的开发者工具集，支持 DDL/JSON 转 Go Struct、Markdown 预览与导出等功能。
 
 ![Extension Icon](icons/icon128.png)
 
@@ -24,11 +24,6 @@
   - 深色模式：Dracula (默认)、Material、Monokai
   - 浅色模式：Eclipse、Neo
 - **字体选择**：JetBrains Mono、Fira Code、Source Code Pro
-
-### ⚖️ DDL 差异对比
-- 对比新旧 DDL 差异
-- 自动生成 ALTER TABLE 语句
-- 支持列新增、修改、删除检测
 
 ### 📝 Markdown 预览
 - 实时 Markdown 渲染预览
@@ -92,9 +87,8 @@ bash scripts/pack-extension.sh
 
 ### 模式切换
 
-点击顶部切换按钮在四种模式间切换：
+点击顶部切换按钮在不同模式间切换：
 - **转换器**：DDL/JSON 转 Go Struct / Protocol Buffer
-- **DDL 对比**：生成 ALTER 语句
 - **Markdown**：预览与导出
 - **工具箱**：时间戳、Base64、URL、JWT、哈希、ID生成、密码、正则、JSON Diff、颜色、Cron、代码对比
 
@@ -210,7 +204,6 @@ devkit-pro/
 ├── manifest.json           # 扩展配置
 ├── controllers/            # 功能控制器 (DevKit 命名空间)
 │   ├── converter-controller.js   # DDL/JSON 转换逻辑
-│   ├── diff-controller.js        # DDL 差异对比逻辑
 │   └── markdown-controller.js    # Markdown 预览/导出逻辑
 ├── lib/                    # 第三方库
 │   ├── codemirror/         # 编辑器核心及模式
@@ -235,8 +228,7 @@ devkit-pro/
 ├── generators/
 │   ├── struct-generator.js
 │   ├── protobuf-generator.js
-│   ├── config-generator.js
-│   └── diff-engine.js
+│   └── config-generator.js
 ├── utils/
 │   ├── editor-manager.js   # 编辑器管理
 │   ├── type-mapper.js

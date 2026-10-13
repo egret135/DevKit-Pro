@@ -6,11 +6,6 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
     <title>DevKit Pro</title>
     <link rel="stylesheet" href="style.css">
-    <link rel="preconnect" href="https://fonts.googleapis.com">
-    <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-    <link
-        href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700&family=JetBrains+Mono:wght@400;500&family=Fira+Code:wght@400;500&family=Source+Code+Pro:wght@400;500&display=swap"
-        rel="stylesheet">
     <!-- CodeMirror & Theme -->
     <link rel="stylesheet" href="lib/codemirror/lib/codemirror.css">
     <link rel="stylesheet" href="lib/codemirror/addon/fold/foldgutter.css">
@@ -27,7 +22,7 @@
     <style>
         .CodeMirror {
             height: 100%;
-            font-family: 'JetBrains Mono', monospace;
+            font-family: var(--font-mono);
             font-size: 14px;
             border-radius: 6px;
         }
@@ -75,7 +70,6 @@
                 <div class="header-actions">
                     <div class="mode-switcher">
                         <button id="modeConverter" class="mode-btn active">转换器</button>
-                        <button id="modeDiff" class="mode-btn">DDL 对比</button>
                         <button id="modeMarkdown" class="mode-btn">Markdown</button>
                         <button id="modeJson" class="mode-btn">JSON 工具</button>
                         <button id="modeToolbox" class="mode-btn">工具箱</button>
@@ -204,49 +198,6 @@
                     </div>
                     <div class="panel-body">
                         <textarea id="outputArea" class="editor output" spellcheck="false" readonly></textarea>
-                    </div>
-                </div>
-            </div>
-
-            <!-- Diff Workspace (Hidden by default) -->
-            <div id="diffWorkspace" class="workspace hidden">
-                <!-- Source/Target Panels (Left) -->
-                <div class="panel vertical-split">
-                    <!-- Target (Online) DDL -->
-                    <div class="sub-panel">
-                        <div class="panel-header">
-                            <div class="panel-title">Online / 目标 DDL (旧)</div>
-                            <button id="clearDiffBtn" class="btn-ghost">清空全部</button>
-                        </div>
-                        <div class="panel-body">
-                            <textarea id="diffTargetInput" class="editor" placeholder="粘贴线上环境的 DDL (基准)..."
-                                spellcheck="false"></textarea>
-                        </div>
-                    </div>
-                    <!-- Source (Staging) DDL -->
-                    <div class="sub-panel">
-                        <div class="panel-header small">
-                            <div class="panel-title">Staging / 本地 DDL (新)</div>
-                        </div>
-                        <div class="panel-body">
-                            <textarea id="diffSourceInput" class="editor" placeholder="粘贴新开发的 DDL (变更后)..."
-                                spellcheck="false"></textarea>
-                        </div>
-                    </div>
-                </div>
-
-                <!-- Diff Output Panel (Right) -->
-                <div class="panel">
-                    <div class="panel-header">
-                        <div class="panel-title">
-                            <span>ALTER 语句</span>
-                        </div>
-                        <div class="panel-actions">
-                            <button id="copyDiffBtn" class="btn-ghost">复制 SQL</button>
-                        </div>
-                    </div>
-                    <div class="panel-body">
-                        <textarea id="diffOutputArea" class="editor output" spellcheck="false" readonly></textarea>
                     </div>
                 </div>
             </div>
@@ -1821,9 +1772,10 @@
                         <div class="col">
                             <label>字体</label>
                             <select id="editorFont" class="select full-width">
-                                <option value="'JetBrains Mono', monospace">JetBrains Mono</option>
-                                <option value="'Fira Code', monospace">Fira Code</option>
-                                <option value="'Source Code Pro', monospace">Source Code Pro</option>
+                                <option value="ui-monospace, 'SF Mono', Menlo, Consolas, monospace">系统等宽</option>
+                                <option value="Menlo, Monaco, monospace">Menlo / Monaco</option>
+                                <option value="Consolas, 'Courier New', monospace">Consolas</option>
+                                <option value="'Courier New', Courier, monospace">Courier New</option>
                             </select>
                         </div>
                     </div>
@@ -1941,7 +1893,6 @@
     <script src="generators/struct-generator.js"></script>
     <script src="generators/protobuf-generator.js"></script>
     <script src="generators/config-generator.js"></script>
-    <script src="generators/diff-engine.js"></script>
     <script src="parsers/yaml-parser.js"></script>
     <script src="parsers/toml-parser.js"></script>
     <script src="parsers/xml-parser.js"></script>
@@ -1998,7 +1949,6 @@
 
     <!-- Controllers -->
     <script src="controllers/converter-controller.js"></script>
-    <script src="controllers/diff-controller.js"></script>
     <script src="controllers/markdown-controller.js"></script>
     <script src="controllers/json-controller.js"></script>
 

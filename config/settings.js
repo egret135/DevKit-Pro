@@ -9,10 +9,10 @@ const Settings = {
         generateTableName: true,
         theme: 'dark',
         editorTheme: 'dracula',
-        editorFont: "'JetBrains Mono', monospace",
+        editorFont: "ui-monospace, 'SF Mono', Menlo, Consolas, monospace",
         autoFormat: 'always',  // 'always', 'paste', 'never'
         formatIndent: 4,       // 2, 4, or 'tab'
-        lastMode: 'converter',  // 'converter', 'diff', 'markdown', 'json', 'toolbox'
+        lastMode: 'converter',  // 'converter', 'markdown', 'json', 'toolbox'
         jsonSortKeysOnCompare: true,
         jsonSubView: 'format', // 'format' | 'compare'
         jsonAutoFormat: true,

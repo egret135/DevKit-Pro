@@ -39,23 +39,14 @@
         goStructOptions: document.getElementById('goStructOptions'),
         configFormatLabels: document.querySelectorAll('.config-format'),
 
-        // Diff Elements
-        diffTargetInput: document.getElementById('diffTargetInput'),
-        diffSourceInput: document.getElementById('diffSourceInput'),
-        diffOutputArea: document.getElementById('diffOutputArea'),
-        copyDiffBtn: document.getElementById('copyDiffBtn'),
-        clearDiffBtn: document.getElementById('clearDiffBtn'),
-
         // Mode Switcher
         modeConverter: document.getElementById('modeConverter'),
-        modeDiff: document.getElementById('modeDiff'),
         modeMarkdown: document.getElementById('modeMarkdown'),
         modeJson: document.getElementById('modeJson'),
         modeToolbox: document.getElementById('modeToolbox'),
         modeImage: document.getElementById('modeImage'),
         modeMedia: document.getElementById('modeMedia'),
         converterWorkspace: document.getElementById('converterWorkspace'),
-        diffWorkspace: document.getElementById('diffWorkspace'),
         markdownWorkspace: document.getElementById('markdownWorkspace'),
         jsonWorkspace: document.getElementById('jsonWorkspace'),
         toolboxWorkspace: document.getElementById('toolboxWorkspace'),
@@ -164,14 +155,12 @@
         await Settings.set('lastMode', mode);
 
         elements.modeConverter.classList.remove('active');
-        elements.modeDiff.classList.remove('active');
         elements.modeMarkdown.classList.remove('active');
         if (elements.modeJson) elements.modeJson.classList.remove('active');
         if (elements.modeToolbox) elements.modeToolbox.classList.remove('active');
         if (elements.modeImage) elements.modeImage.classList.remove('active');
         if (elements.modeMedia) elements.modeMedia.classList.remove('active');
         elements.converterWorkspace.classList.add('hidden');
-        elements.diffWorkspace.classList.add('hidden');
         elements.markdownWorkspace.classList.add('hidden');
         if (elements.jsonWorkspace) elements.jsonWorkspace.classList.add('hidden');
         if (elements.toolboxWorkspace) elements.toolboxWorkspace.classList.add('hidden');
@@ -184,12 +173,6 @@
             elements.converterOptions.style.visibility = 'visible';
             refreshEditorsIn('inputArea', 'outputArea');
             setStatus('转换模式', 'ready');
-        } else if (mode === 'diff') {
-            elements.modeDiff.classList.add('active');
-            elements.diffWorkspace.classList.remove('hidden');
-            elements.converterOptions.style.visibility = 'hidden';
-            refreshEditorsIn('diffTargetInput', 'diffSourceInput', 'diffOutputArea');
-            setStatus('DDL 对比模式', 'ready');
         } else if (mode === 'markdown') {
             elements.modeMarkdown.classList.add('active');
             elements.markdownWorkspace.classList.remove('hidden');
@@ -259,7 +242,7 @@
         elements.inlineNestedStructs.checked = currentSettings.inlineNestedStructs !== false;
 
         elements.editorTheme.value = currentSettings.editorTheme || 'dracula';
-        elements.editorFont.value = currentSettings.editorFont || "'JetBrains Mono', monospace";
+        elements.editorFont.value = currentSettings.editorFont || "ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
 
         elements.autoFormat.value = currentSettings.autoFormat || 'always';
         elements.formatIndent.value = currentSettings.formatIndent === 'tab' ? 'tab' : (currentSettings.formatIndent || 4).toString();
@@ -418,18 +401,6 @@
             readOnly: true,
             theme: currentSettings.editorTheme
         });
-        editorManager.initFromTextArea('diffTargetInput', 'sql', {
-            placeholder: "粘贴线上环境的 DDL (基准)...",
-            theme: currentSettings.editorTheme
-        });
-        editorManager.initFromTextArea('diffSourceInput', 'sql', {
-            placeholder: "粘贴新开发的 DDL (变更后)...",
-            theme: currentSettings.editorTheme
-        });
-        editorManager.initFromTextArea('diffOutputArea', 'sql', {
-            readOnly: true,
-            theme: currentSettings.editorTheme
-        });
         editorManager.initFromTextArea('markdownInput', 'markdown', {
             placeholder: "输入 Markdown 文本...",
             theme: currentSettings.editorTheme
@@ -460,7 +431,6 @@
 
         // Initialize controllers
         if (DevKit.ConverterController) DevKit.ConverterController.init(ctx);
-        if (DevKit.DiffController) DevKit.DiffController.init(ctx);
         if (DevKit.MarkdownController) DevKit.MarkdownController.init(ctx);
         if (DevKit.JsonController) DevKit.JsonController.init(ctx);
         if (DevKit.ToolboxController) DevKit.ToolboxController.init();
@@ -474,7 +444,6 @@
 
         // Mode switcher
         elements.modeConverter.addEventListener('click', () => switchMode('converter'));
-        elements.modeDiff.addEventListener('click', () => switchMode('diff'));
         elements.modeMarkdown.addEventListener('click', () => switchMode('markdown'));
         elements.modeJson.addEventListener('click', () => switchMode('json'));
         elements.modeToolbox.addEventListener('click', () => switchMode('toolbox'));
@@ -499,7 +468,9 @@
         document.addEventListener('keydown', handleKeyboard);
 
         // Restore last used mode
-        const lastMode = currentSettings.lastMode || 'converter';
+        const lastMode = currentSettings.lastMode === 'diff'
+            ? 'converter'
+            : (currentSettings.lastMode || 'converter');
         if (lastMode !== 'converter') {
             await switchMode(lastMode);
         } else {
