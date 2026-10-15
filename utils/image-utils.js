@@ -10,10 +10,13 @@ const ImageUtils = {
      * @param {string} [options.accept='image/*'] - Accept filter for the hidden file input.
      * @param {(file: File) => void} options.onFile - Called with the first accepted file.
      * @param {boolean} [options.enablePaste=true] - Also accept images pasted from clipboard while the container (or document) is focused.
+     * @param {boolean} [options.multiple=false] - Accept several files at once; requires options.onFiles.
+     * @param {(files: File[]) => void} [options.onFiles] - Called with every accepted file when multiple is on.
      * @returns {{ open: () => void, destroy: () => void }}
      */
     createDropZone(container, options) {
-        if (!container || typeof options?.onFile !== 'function') {
+        const multiple = !!options?.multiple && typeof options.onFiles === 'function';
+        if (!container || (!multiple && typeof options?.onFile !== 'function')) {
             throw new Error('createDropZone requires a container element and an onFile callback');
         }
         const accept = options.accept || 'image/*';
@@ -22,9 +25,15 @@ const ImageUtils = {
         const input = document.createElement('input');
         input.type = 'file';
         input.accept = accept;
+        input.multiple = multiple;
         input.style.display = 'none';
         container.appendChild(input);
 
+        const deliver = (files) => {
+            if (!files.length) return;
+            if (multiple) options.onFiles(files);
+            else options.onFile(files[0]);
+        };
         const pickFirstFile = (fileList) => {
             if (!fileList || !fileList.length) return null;
             return fileList[0];
@@ -44,7 +53,12 @@ const ImageUtils = {
             e.preventDefault();
             e.stopPropagation();
             container.classList.remove('img-dropzone-active');
-            const file = pickFirstFile(e.dataTransfer && e.dataTransfer.files);
+            const list = e.dataTransfer && e.dataTransfer.files;
+            if (multiple) {
+                deliver(Array.from(list || []));
+                return;
+            }
+            const file = pickFirstFile(list);
             if (file) options.onFile(file);
         };
         const onClick = (e) => {
@@ -53,21 +67,25 @@ const ImageUtils = {
             input.click();
         };
         const onChange = () => {
+            if (multiple) {
+                deliver(Array.from(input.files || []));
+                return;
+            }
             const file = pickFirstFile(input.files);
             if (file) options.onFile(file);
         };
         const onPaste = (e) => {
             const items = e.clipboardData && e.clipboardData.items;
             if (!items) return;
+            const files = [];
             for (const item of items) {
                 if (item.type && item.type.startsWith('image/')) {
                     const file = item.getAsFile();
-                    if (file) {
-                        options.onFile(file);
-                        break;
-                    }
+                    if (file) files.push(file);
+                    if (file && !multiple) break;
                 }
             }
+            deliver(files);
         };
 
         container.addEventListener('dragover', onDragOver);

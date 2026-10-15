@@ -33,7 +33,13 @@ zip -r "$ZIP_PATH" . \
   -x "test.html" \
   -x "test-protobuf.html" \
   -x "test/*" \
-  -x "tests/*"
+  -x "tests/*" \
+  -x "popup.html" \
+  -x "popup.js" \
+  -x "popup.css" \
+  -x "go/*" \
+  -x "go" \
+  -x "main.go"
 
 echo "Created: ${ZIP_PATH}"
 python3 - <<PY
@@ -49,7 +55,20 @@ script_src = re.compile(r"""<script[^>]+src=["']https?://""", re.I)
 with zipfile.ZipFile(zp) as z:
     names = z.namelist()
     assert "manifest.json" in names, "manifest.json must be at zip root"
-    bad = [n for n in names if n.startswith(("store/", "docs/", ".git/", "scripts/")) or n in ("test.html", "test-protobuf.html")]
+    banned_prefixes = ("store/", "docs/", ".git/", "scripts/", "go/")
+    banned_exact = {
+        "test.html",
+        "test-protobuf.html",
+        "popup.html",
+        "popup.js",
+        "popup.css",
+        "main.go",
+        "LICENSE",
+    }
+    bad = [
+        n for n in names
+        if n.startswith(banned_prefixes) or n in banned_exact or n.endswith(".md")
+    ]
     if bad:
         print("Unexpected entries:", bad)
         sys.exit(1)

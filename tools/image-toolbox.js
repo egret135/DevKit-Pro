@@ -21,12 +21,32 @@
             tab.addEventListener('click', () => switchTool(tab.dataset.tool));
         });
 
+        initFilter();
+
         Object.keys(DevKit.ImageTools).forEach(key => {
             const tool = DevKit.ImageTools[key];
             if (tool && typeof tool.init === 'function' && !tool._initialized) {
                 tool.init();
                 tool._initialized = true;
             }
+        });
+    }
+
+    function initFilter() {
+        const input = document.getElementById('imgToolFilter');
+        if (!input) return;
+        input.addEventListener('input', () => {
+            const q = (input.value || '').trim().toLowerCase();
+            document.querySelectorAll('#imageWorkspace .img-group').forEach((group) => {
+                let visible = 0;
+                group.querySelectorAll('.img-tab').forEach((tab) => {
+                    const hay = `${tab.textContent || ''} ${tab.dataset.keywords || ''} ${tab.dataset.tool || ''}`.toLowerCase();
+                    const match = !q || hay.includes(q);
+                    tab.classList.toggle('is-filtered-out', !match);
+                    if (match) visible += 1;
+                });
+                group.classList.toggle('is-filtered-out', visible === 0);
+            });
         });
     }
 

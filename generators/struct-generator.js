@@ -1,294 +1,218 @@
 // Go Struct Generator
-// Generates Go struct code with json and gorm tags, and inline comments
+// Generates Go structs from the unified model (DDL tables or JSON structs):
+// nullable styles, json/gorm/db tags, multi-table output, optional package/import header.
+
+const GO_DDL_INPUTS = ['mysql', 'postgresql', 'sqlite', 'ddl'];
+const GO_INDENT = '    ';
+
+const GO_SQL_NULL_TYPES = {
+    'string': 'sql.NullString',
+    'bool': 'sql.NullBool',
+    'int8': 'sql.NullInt16',
+    'int16': 'sql.NullInt16',
+    'int32': 'sql.NullInt32',
+    'int64': 'sql.NullInt64',
+    'int': 'sql.NullInt64',
+    'uint8': 'sql.NullByte',
+    'uint16': 'sql.NullInt32',
+    'uint32': 'sql.NullInt64',
+    'uint64': 'sql.NullInt64',
+    'uint': 'sql.NullInt64',
+    'float32': 'sql.NullFloat64',
+    'float64': 'sql.NullFloat64',
+    'time.Time': 'sql.NullTime'
+};
+
+function normalizeGoOptions(parsedData, options = {}) {
+    return {
+        structName: options.structName || '',
+        packageName: options.packageName || 'model',
+        generateTableName: options.generateTableName !== false,
+        inlineNestedStructs: options.inlineNestedStructs !== false,
+        isDDL: GO_DDL_INPUTS.includes(options.inputType || 'ddl'),
+        nullableStyle: options.nullableStyle || 'plain',
+        omitempty: !!options.omitempty,
+        tagStyle: options.tagStyle || 'gorm',
+        gormDetail: !!options.gormDetail,
+        withHeader: !!options.withHeader
+    };
+}
+
+// 统一模型：兼容只有 fields/tableName 的旧结构
+function goTablesOf(parsedData, opts) {
+    let tables = parsedData.tables && parsedData.tables.length
+        ? parsedData.tables
+        : (parsedData.fields && parsedData.fields.length
+            ? [{
+                structName: parsedData.structName || GoNaming.toPascal(parsedData.tableName || 'Model'),
+                tableName: parsedData.tableName || '',
+                comment: parsedData.comment || '',
+                fields: parsedData.fields
+            }]
+            : []);
+    if (opts.structName && tables.length === 1 && !parsedData.rootAlias) {
+        tables = [Object.assign({}, tables[0], { structName: opts.structName })];
+    }
+    return tables;
+}
 
 function generateGoStruct(parsedData, options = {}) {
-    const {
-        structName = parsedData.structName || snakeToCamel(parsedData.tableName),
-        generateTableName = true,
-        packageName = 'model',
-        inlineNestedStructs = true,  // New option: inline nested structs by default
-        inputType = 'ddl'  // New option: 'json' or 'ddl' to determine tag generation
-    } = options;
-
-    let code = '';
-
-    // Add struct comment
-    const structComment = parsedData.tableName ? `${parsedData.tableName}表` : structName;
-    code += `// ${structName} ${structComment}\n`;
-    code += `type ${structName} struct {\n`;
-
-    // Process fields - check if we need to inline nested structs
-    const fields = processFieldsForInline(parsedData.fields, parsedData.nestedStructs, inlineNestedStructs);
-
-    // Calculate max widths for alignment
-    const maxFieldNameLen = Math.max(...fields.map(f => f.goName.length));
-
-    // For maxTypeLen, exclude inline structs as they are multi-line and don't need padding
-    const regularFields = fields.filter(f => !f.goType.includes('struct {'));
-    const maxTypeLen = regularFields.length > 0
-        ? Math.max(...regularFields.map(f => f.goType.length))
-        : 20; // Default if all fields are inline structs
-
-    // Generate tags based on input type
-    const fieldTags = fields.map(f => generateFieldTag(f, inputType));
-    const maxTagLen = Math.max(...fieldTags.map(t => t.length));
-
-    // Generate fields with alignment
-    for (let i = 0; i < fields.length; i++) {
-        const field = fields[i];
-        const tag = fieldTags[i];
-
-        const fieldName = field.goName.padEnd(maxFieldNameLen);
-
-        // Check if this is an inline struct (goType contains 'struct {')
-        if (field.goType.includes('struct {')) {
-            // For inline structs, the tag goes at the end after the closing brace
-            const fieldType = field.goType;  // Don't pad inline structs
-            const comment = field.comment ? ` // ${field.comment}` : '';
-            code += `    ${fieldName} ${fieldType} ${tag}${comment}\n`;
-        } else {
-            // For regular fields, normal formatting
-            const fieldType = field.goType.padEnd(maxTypeLen);
-            const tagStr = tag.padEnd(maxTagLen);
-            const comment = field.comment ? ` // ${field.comment}` : '';
-            code += `    ${fieldName} ${fieldType} ${tagStr}${comment}\n`;
-        }
-    }
-
-    code += `}\n`;
-
-    // Add TableName method if enabled (only for DDL, not JSON)
-    if (inputType !== 'json' && generateTableName && parsedData.tableName) {
-        code += `\n// TableName 返回表名\n`;
-        code += `func (${structName}) TableName() string {\n`;
-        code += `    return "${parsedData.tableName}"\n`;
-        code += `}\n`;
-    }
-
-    // Handle nested structs (for JSON) - only generate separately if not inline
-    if (!inlineNestedStructs && parsedData.nestedStructs && parsedData.nestedStructs.length > 0) {
-        for (const nested of parsedData.nestedStructs) {
-            code += '\n';
-            code += generateNestedStruct(nested, inputType);
-        }
-    }
-
-    return code;
+    return renderGo(parsedData, options).code;
 }
 
-// Process fields to inline nested structs if needed
-function processFieldsForInline(fields, nestedStructs, inlineNestedStructs) {
-    if (!inlineNestedStructs || !nestedStructs || nestedStructs.length === 0) {
-        return fields;
+// 生成完整 .go 文件（package + import + 代码）
+function buildGoFile(parsedData, options = {}) {
+    return renderGo(parsedData, Object.assign({}, options, { withHeader: true })).code;
+}
+
+function renderGo(parsedData, options) {
+    const opts = normalizeGoOptions(parsedData, options);
+    const ctx = { opts, imports: new Set(), nestedMap: {} };
+    for (const nested of parsedData.nestedStructs || []) ctx.nestedMap[nested.name] = nested;
+
+    const blocks = [];
+    if (parsedData.rootAlias) {
+        const alias = parsedData.rootAlias;
+        noteGoImports(alias.elemType, ctx);
+        blocks.push(`// ${alias.name} 顶层数组\ntype ${alias.name} []${alias.elemType}\n`);
     }
 
-    // Create a map of nested struct names to their definitions
-    const nestedMap = {};
-    for (const nested of nestedStructs) {
-        nestedMap[nested.name] = nested;
+    const tables = goTablesOf(parsedData, opts);
+    for (const table of tables) {
+        let block = `// ${table.structName} ${goStructComment(table, opts)}\n`;
+        block += `type ${table.structName} struct {\n`;
+        block += renderGoFields(table.fields, GO_INDENT, ctx).join('\n') + '\n';
+        block += '}\n';
+        if (opts.isDDL && opts.generateTableName && table.tableName) {
+            block += `\n// TableName 返回表名\n`;
+            block += `func (${table.structName}) TableName() string {\n`;
+            block += `${GO_INDENT}return "${table.tableName}"\n`;
+            block += `}\n`;
+        }
+        blocks.push(block);
     }
 
-    // Process each field
-    return fields.map(field => {
-        // Handle normal struct
-        if (nestedMap[field.goType]) {
-            const nested = nestedMap[field.goType];
-            return {
-                ...field,
-                goType: generateInlineStruct(nested, nestedMap, '    ')
-            };
+    if (!opts.inlineNestedStructs) {
+        for (const nested of parsedData.nestedStructs || []) {
+            let block = `// ${nested.name} 嵌套结构\n`;
+            block += `type ${nested.name} struct {\n`;
+            block += renderGoFields(nested.fields, GO_INDENT, ctx).join('\n') + '\n';
+            block += '}\n';
+            blocks.push(block);
         }
+    }
 
-        // Handle array of structs
-        if (field.goType.startsWith('[]')) {
-            const innerType = field.goType.substring(2);
-            if (nestedMap[innerType]) {
-                const nested = nestedMap[innerType];
-                return {
-                    ...field,
-                    goType: '[]' + generateInlineStruct(nested, nestedMap, '    ')
-                };
-            }
+    let code = blocks.join('\n');
+    const imports = Array.from(ctx.imports).sort();
+    if (opts.withHeader) code = goFileHeader(opts.packageName, imports) + code;
+    return { code, imports };
+}
+
+function goStructComment(table, opts) {
+    if (table.comment) return sanitizeGoComment(table.comment);
+    if (opts.isDDL && table.tableName) return `对应表 ${table.tableName}`;
+    return '根结构';
+}
+
+function goFileHeader(packageName, imports) {
+    let head = `package ${packageName || 'model'}\n\n`;
+    if (imports.length === 1) head += `import "${imports[0]}"\n\n`;
+    else if (imports.length > 1) head += 'import (\n' + imports.map(i => `\t"${i}"`).join('\n') + '\n)\n\n';
+    return head;
+}
+
+function noteGoImports(type, ctx) {
+    if (/\btime\.Time\b/.test(type)) ctx.imports.add('time');
+    if (/\bjson\.RawMessage\b/.test(type)) ctx.imports.add('encoding/json');
+    if (/\bsql\.Null/.test(type)) ctx.imports.add('database/sql');
+}
+
+function resolveGoFieldType(field, opts) {
+    const base = field.goBaseType || field.goType;
+    const style = opts.nullableStyle;
+    if (style === 'plain' || base === 'any' || base.startsWith('[]') || base === 'json.RawMessage') return base;
+    if (opts.isDDL) {
+        if (!field.nullable || field.isPrimaryKey) return base;
+        if (style === 'sqlnull') return GO_SQL_NULL_TYPES[base] || base;
+        return '*' + base;
+    }
+    return (field.optional || field.nullable) ? '*' + base : base;
+}
+
+function sanitizeGoComment(text) {
+    return String(text || '').replace(/\s*[\r\n]+\s*/g, ' ').trim();
+}
+
+function sanitizeTagValue(text) {
+    return String(text || '').replace(/[`"\r\n]/g, '').replace(/;/g, ',').trim();
+}
+
+function buildGoTag(field, opts) {
+    const omit = opts.omitempty || (!opts.isDDL && field.optional);
+    const parts = [`json:"${field.jsonName}${omit ? ',omitempty' : ''}"`];
+    if (!opts.isDDL || opts.tagStyle === 'json') return '`' + parts[0] + '`';
+    if (opts.tagStyle === 'db') return '`' + parts[0] + ` db:"${field.dbColumn}"` + '`';
+
+    const gorm = [`column:${field.dbColumn}`];
+    if (opts.gormDetail && field.sqlType) gorm.push(`type:${sanitizeTagValue(field.sqlType)}`);
+    if (field.isPrimaryKey) gorm.push('primaryKey');
+    if (field.isAutoIncrement) gorm.push('autoIncrement');
+    if (opts.gormDetail) {
+        if (field.unique && !field.isPrimaryKey) gorm.push('unique');
+        for (const ix of field.indexNames || []) gorm.push(`${ix.unique ? 'uniqueIndex' : 'index'}:${ix.name}`);
+    }
+    if (!field.nullable && !field.isPrimaryKey) gorm.push('not null');
+    if (opts.gormDetail) {
+        const def = field.defaultValue;
+        if (def != null && !/^NULL$/i.test(def) && !/[;"`]/.test(def)) gorm.push(`default:${def}`);
+        if (field.comment) gorm.push(`comment:${sanitizeTagValue(field.comment)}`);
+    }
+    parts.push(`gorm:"${gorm.join(';')}"`);
+    return '`' + parts.join(' ') + '`';
+}
+
+// 渲染字段行；内联模式下嵌套结构展开为 struct { ... }
+function renderGoFields(fields, indent, ctx) {
+    const rows = fields.map(field => {
+        let type = resolveGoFieldType(field, ctx.opts);
+        noteGoImports(type, ctx);
+        const core = type.replace(/^[*\[\]]+/, '');
+        const nested = ctx.opts.inlineNestedStructs ? ctx.nestedMap[core] : null;
+        let multiline = false;
+        if (nested) {
+            const prefix = type.slice(0, type.length - core.length);
+            const inner = renderGoFields(nested.fields, indent + GO_INDENT, ctx);
+            type = `${prefix}struct {\n${inner.join('\n')}\n${indent}}`;
+            multiline = true;
         }
+        return {
+            name: field.goName,
+            type,
+            multiline,
+            tag: buildGoTag(field, ctx.opts),
+            comment: field.comment ? ` // ${sanitizeGoComment(field.comment)}` : ''
+        };
+    });
 
-        return field;
+    const nameWidth = Math.max(0, ...rows.map(r => r.name.length));
+    const typeWidth = Math.max(0, ...rows.filter(r => !r.multiline).map(r => r.type.length));
+    const tagWidth = Math.max(0, ...rows.map(r => r.tag.length));
+
+    return rows.map(r => {
+        const name = r.name.padEnd(nameWidth);
+        if (r.multiline) return `${indent}${name} ${r.type} ${r.tag}${r.comment}`;
+        const tag = r.comment ? r.tag.padEnd(tagWidth) : r.tag;
+        return `${indent}${name} ${r.type.padEnd(typeWidth)} ${tag}${r.comment}`.replace(/\s+$/, '');
     });
 }
 
-// Generate inline struct definition
-function generateInlineStruct(nestedData, nestedMap, baseIndent = '    ') {
-    let code = 'struct {\n';
-
-    // Calculate new indent for fields inside this struct
-    const fieldIndent = baseIndent + '    ';
-
-    // Process fields recursively
-    const fields = nestedData.fields.map(field => {
-        // Handle normal struct
-        if (nestedMap && nestedMap[field.goType]) {
-            const nested = nestedMap[field.goType];
-            return {
-                ...field,
-                goType: generateInlineStruct(nested, nestedMap, fieldIndent)
-            };
-        }
-
-        // Handle array of structs
-        if (field.goType.startsWith('[]')) {
-            const innerType = field.goType.substring(2);
-            if (nestedMap && nestedMap[innerType]) {
-                const nested = nestedMap[innerType];
-                return {
-                    ...field,
-                    goType: '[]' + generateInlineStruct(nested, nestedMap, fieldIndent)
-                };
-            }
-        }
-
-        return field;
-    });
-
-    const maxFieldNameLen = Math.max(...fields.map(f => f.goName.length));
-
-    // For maxTypeLen, exclude inline structs as they are multi-line and don't need padding
-    // Also exclude array of inline structs which start with '[]struct {'
-    const regularFields = fields.filter(f => !f.goType.includes('struct {'));
-    const maxTypeLen = regularFields.length > 0
-        ? Math.max(...regularFields.map(f => f.goType.length))
-        : 20;
-
-    const fieldTags = fields.map(f => `\`json:"${f.jsonName}"\``);
-    const maxTagLen = Math.max(...fieldTags.map(t => t.length));
-
-    for (let i = 0; i < fields.length; i++) {
-        const field = fields[i];
-        const tag = fieldTags[i];
-
-        const fieldName = field.goName.padEnd(maxFieldNameLen);
-
-        let line = '';
-        if (field.goType.includes('struct {')) {
-            // Inline struct (or array of): don't pad type
-            const fieldType = field.goType;
-            const tagStr = tag;
-            line = `${fieldIndent}${fieldName} ${fieldType} ${tagStr}`;
-        } else {
-            const fieldType = field.goType.padEnd(maxTypeLen);
-            const tagStr = tag.padEnd(maxTagLen);
-            line = `${fieldIndent}${fieldName} ${fieldType} ${tagStr}`;
-        }
-
-        const comment = field.comment ? ` // ${field.comment}` : '';
-        code += `${line}${comment}\n`;
-    }
-
-    code += `${baseIndent}}`;
-
-    return code;
-}
-
-// Generate field tag based on input type
-function generateFieldTag(field, inputType) {
-    if (inputType === 'json') {
-        // JSON input: only json tag
-        return `\`json:"${field.jsonName}"\``;
-    } else {
-        // DDL input: json + gorm tags
-        return generateGormTag(field);
-    }
-}
-
-// Generate gorm tag for a field
-function generateGormTag(field) {
-    const jsonTag = `json:"${field.jsonName}"`;
-
-    let gormParts = [`column:${field.dbColumn}`];
-
-    if (field.isPrimaryKey) {
-        gormParts.push('primaryKey');
-    }
-
-    if (field.isAutoIncrement) {
-        gormParts.push('autoIncrement');
-    }
-
-    if (!field.nullable) {
-        gormParts.push('not null');
-    }
-
-    const gormTag = `gorm:"${gormParts.join(';')}"`;
-
-    return `\`${jsonTag} ${gormTag}\``;
-}
-
-// Generate nested struct (for JSON objects)
-function generateNestedStruct(nestedData, inputType = 'ddl') {
-    let code = '';
-
-    code += `// ${nestedData.name} 嵌套结构\n`;
-    code += `type ${nestedData.name} struct {\n`;
-
-    const fields = nestedData.fields;
-    const maxFieldNameLen = Math.max(...fields.map(f => f.goName.length));
-    const maxTypeLen = Math.max(...fields.map(f => f.goType.length));
-
-    const fieldTags = fields.map(f => {
-        if (inputType === 'json') {
-            return `\`json:"${f.jsonName}"\``;
-        } else {
-            return `\`json:"${f.jsonName}"\``;  // Nested structs from JSON only have json tags
-        }
-    });
-    const maxTagLen = Math.max(...fieldTags.map(t => t.length));
-
-    for (let i = 0; i < fields.length; i++) {
-        const field = fields[i];
-        const tag = fieldTags[i];
-
-        const fieldName = field.goName.padEnd(maxFieldNameLen);
-        const fieldType = field.goType.padEnd(maxTypeLen);
-        const tagStr = tag.padEnd(maxTagLen);
-        const comment = field.comment ? ` // ${field.comment}` : '';
-
-        code += `    ${fieldName} ${fieldType} ${tagStr}${comment}\n`;
-    }
-
-    code += `}\n`;
-
-    return code;
-}
-
-// Convert snake_case to PascalCase
-function snakeToCamel(str) {
-    if (!str) return '';
-
-    // Split by underscores and capitalize first letter of each word
-    return str
-        .split('_')
-        .map(word => {
-            if (!word) return '';
-            return word.charAt(0).toUpperCase() + word.slice(1).toLowerCase();
-        })
-        .join('');
-}
-
-// Determine required imports based on field types
+// Determine required imports based on field types (kept for compatibility)
 function getRequiredImports(fields) {
-    const imports = new Set();
-
-    for (const field of fields) {
-        if (field.goType === 'time.Time') {
-            imports.add('time');
-        }
-        if (field.goType === 'json.RawMessage') {
-            imports.add('encoding/json');
-        }
-    }
-
-    return Array.from(imports);
+    const ctx = { imports: new Set() };
+    for (const field of fields || []) noteGoImports(field.goType || '', ctx);
+    return Array.from(ctx.imports);
 }
 
-// Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = { generateGoStruct, generateGormTag, getRequiredImports };
+    module.exports = { generateGoStruct, buildGoFile, renderGo, getRequiredImports };
 }

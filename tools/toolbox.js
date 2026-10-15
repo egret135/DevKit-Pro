@@ -5,7 +5,7 @@
     'use strict';
     const DevKit = window.DevKit = window.DevKit || {};
 
-    let currentTool = 'timestamp';
+    let currentTool = 'uuid';
     let timestampInterval = null;
 
     function debounce(func, wait) {
@@ -24,6 +24,8 @@
             tab.addEventListener('click', () => switchTool(tab.dataset.tool));
         });
 
+        initToolboxFilter();
+
         // Initialize timestamp tool
         initTzPicker();
         initTimestamp();
@@ -34,10 +36,30 @@
         initUuid();
         initPassword();
         initRegex();
-        initJsonDiff();
         initColor();
         initCron();
         initCodeDiff();
+    }
+
+    function initToolboxFilter() {
+        const input = document.getElementById('toolboxFilter');
+        if (!input) return;
+
+        const apply = () => {
+            const q = (input.value || '').trim().toLowerCase();
+            document.querySelectorAll('.toolbox-group').forEach((group) => {
+                let visible = 0;
+                group.querySelectorAll('.toolbox-tab').forEach((tab) => {
+                    const hay = `${tab.textContent || ''} ${tab.dataset.keywords || ''} ${tab.dataset.tool || ''}`.toLowerCase();
+                    const match = !q || hay.includes(q);
+                    tab.classList.toggle('is-filtered-out', !match);
+                    if (match) visible += 1;
+                });
+                group.classList.toggle('is-filtered-out', visible === 0);
+            });
+        };
+
+        input.addEventListener('input', apply);
     }
 
     function switchTool(tool) {
@@ -48,9 +70,13 @@
         document.querySelector(`.toolbox-tab[data-tool="${tool}"]`)?.classList.add('active');
 
         // Show corresponding panel
-        document.querySelectorAll('.tool-panel').forEach(p => p.classList.remove('active'));
+        document.querySelectorAll('#toolboxWorkspace .tool-panel').forEach(p => p.classList.remove('active'));
         const panelId = 'toolPanel' + tool.charAt(0).toUpperCase() + tool.slice(1);
-        document.getElementById(panelId)?.classList.add('active');
+        const panel = document.getElementById(panelId);
+        if (panel) {
+            panel.classList.add('active');
+        }
+        if (tool === 'codeDiff') onCodeDiffShown();
     }
 
     // ==================== Shared Helpers ====================
@@ -730,149 +756,748 @@
     }
 
     // ==================== Base64 Tool ====================
+    function codecToast(msg) {
+        if (DevKit.App && typeof DevKit.App.showToast === 'function') {
+            DevKit.App.showToast(msg);
+        }
+    }
+
+    function utf8ByteLength(str) {
+        try {
+            return new TextEncoder().encode(str).length;
+        } catch (_) {
+            return str.length;
+        }
+    }
+
     function initBase64() {
-        document.getElementById('base64EncodeBtn')?.addEventListener('click', () => {
+        let mode = 'encode'; // encode | decode
+
+        function chipOn(id) {
+            return document.getElementById(id)?.classList.contains('is-on');
+        }
+        function setChip(id, on) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.toggle('is-on', !!on);
+            el.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+        function urlSafeOn() {
+            return chipOn('base64UrlSafe');
+        }
+        function noPadOn() {
+            return chipOn('base64NoPad');
+        }
+
+        function encodeBase64(text) {
+            let b64 = btoa(unescape(encodeURIComponent(text)));
+            if (urlSafeOn()) b64 = b64.replace(/\+/g, '-').replace(/\//g, '_');
+            if (noPadOn()) b64 = b64.replace(/=+$/, '');
+            return b64;
+        }
+
+        function decodeBase64(text) {
+            let s = String(text || '').trim().replace(/\s+/g, '');
+            if (!s) return '';
+            if (urlSafeOn() || /[-_]/.test(s)) {
+                s = s.replace(/-/g, '+').replace(/_/g, '/');
+            }
+            const pad = s.length % 4;
+            if (pad) s += '='.repeat(4 - pad);
+            return decodeURIComponent(escape(atob(s)));
+        }
+
+        function syncModeUI() {
+            document.getElementById('base64ModeEncode')?.classList.toggle('active', mode === 'encode');
+            document.getElementById('base64ModeDecode')?.classList.toggle('active', mode === 'decode');
+            const run = document.getElementById('base64RunBtn');
+            if (run) run.textContent = mode === 'encode' ? '编码' : '解码';
+            const padChip = document.getElementById('base64NoPad');
+            if (padChip) padChip.hidden = mode !== 'encode';
+        }
+
+        function updateMeta() {
             const input = document.getElementById('base64Input')?.value || '';
+            const meta = document.getElementById('base64Meta');
+            if (meta) {
+                meta.textContent = `${input.length} 字符 · ${utf8ByteLength(input)} 字节`;
+            }
+        }
+
+        function run(showEmptyError) {
+            const input = document.getElementById('base64Input')?.value ?? '';
             const output = document.getElementById('base64Output');
             if (!output) return;
-
-            try {
-                output.value = btoa(unescape(encodeURIComponent(input)));
-            } catch (e) {
-                output.value = '编码失败: ' + e.message;
+            updateMeta();
+            if (!input) {
+                output.value = '';
+                output.classList.remove('is-error');
+                if (showEmptyError) codecToast('请先输入内容');
+                return;
             }
+            try {
+                output.value = mode === 'encode' ? encodeBase64(input) : decodeBase64(input);
+                output.classList.remove('is-error');
+            } catch (e) {
+                output.value = mode === 'encode'
+                    ? ('编码失败: ' + (e.message || '未知错误'))
+                    : '解码失败: 输入不是有效的 Base64';
+                output.classList.add('is-error');
+            }
+        }
+
+        const debouncedRun = debounce(() => run(false), 120);
+
+        async function persist() {
+            if (typeof Settings === 'undefined' || !Settings.set) return;
+            await Settings.set('base64Options', {
+                mode,
+                urlSafe: urlSafeOn(),
+                noPad: noPadOn()
+            });
+        }
+        const debouncedPersist = debounce(() => { persist(); }, 400);
+
+        document.querySelectorAll('[data-b64-mode]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                mode = btn.getAttribute('data-b64-mode') === 'decode' ? 'decode' : 'encode';
+                syncModeUI();
+                run(false);
+                debouncedPersist();
+            });
+        });
+        ['base64UrlSafe', 'base64NoPad'].forEach((id) => {
+            document.getElementById(id)?.addEventListener('click', () => {
+                setChip(id, !chipOn(id));
+                run(false);
+                debouncedPersist();
+            });
+        });
+        document.getElementById('base64RunBtn')?.addEventListener('click', () => run(true));
+        document.getElementById('base64Input')?.addEventListener('input', () => { updateMeta(); debouncedRun(); });
+        document.getElementById('base64SwapBtn')?.addEventListener('click', () => {
+            const inEl = document.getElementById('base64Input');
+            const outEl = document.getElementById('base64Output');
+            if (!inEl || !outEl || outEl.classList.contains('is-error')) return;
+            const tmp = inEl.value;
+            inEl.value = outEl.value;
+            outEl.value = tmp;
+            mode = mode === 'encode' ? 'decode' : 'encode';
+            syncModeUI();
+            run(false);
+            debouncedPersist();
+        });
+        document.getElementById('base64CopyBtn')?.addEventListener('click', () => {
+            const v = document.getElementById('base64Output')?.value || '';
+            if (!v || document.getElementById('base64Output')?.classList.contains('is-error')) {
+                codecToast('没有可复制的结果');
+                return;
+            }
+            navigator.clipboard.writeText(v).then(() => codecToast('已复制')).catch(() => codecToast('复制失败'));
+        });
+        document.getElementById('base64ClearBtn')?.addEventListener('click', () => {
+            const inEl = document.getElementById('base64Input');
+            const outEl = document.getElementById('base64Output');
+            if (inEl) inEl.value = '';
+            if (outEl) { outEl.value = ''; outEl.classList.remove('is-error'); }
+            updateMeta();
         });
 
-        document.getElementById('base64DecodeBtn')?.addEventListener('click', () => {
-            const input = document.getElementById('base64Input')?.value || '';
-            const output = document.getElementById('base64Output');
-            if (!output) return;
-
+        (async () => {
             try {
-                output.value = decodeURIComponent(escape(atob(input)));
-            } catch (e) {
-                output.value = '解码失败: 输入不是有效的 Base64';
-            }
-        });
+                if (typeof Settings !== 'undefined' && Settings.get) {
+                    const saved = await Settings.get('base64Options');
+                    if (saved && typeof saved === 'object') {
+                        mode = saved.mode === 'decode' ? 'decode' : 'encode';
+                        setChip('base64UrlSafe', !!saved.urlSafe);
+                        setChip('base64NoPad', !!saved.noPad);
+                    }
+                }
+            } catch (_) { /* ignore */ }
+            syncModeUI();
+            updateMeta();
+        })();
     }
 
     // ==================== URL Tool ====================
     function initUrl() {
-        document.getElementById('urlEncodeBtn')?.addEventListener('click', () => {
-            const input = document.getElementById('urlInput')?.value || '';
-            const output = document.getElementById('urlOutput');
-            if (output) output.value = encodeURIComponent(input);
-        });
+        let mode = 'encode';
 
-        document.getElementById('urlDecodeBtn')?.addEventListener('click', () => {
-            const input = document.getElementById('urlInput')?.value || '';
+        function style() {
+            return document.getElementById('urlEncodeStyle')?.value === 'uri' ? 'uri' : 'component';
+        }
+
+        function syncModeUI() {
+            document.getElementById('urlModeEncode')?.classList.toggle('active', mode === 'encode');
+            document.getElementById('urlModeDecode')?.classList.toggle('active', mode === 'decode');
+            const run = document.getElementById('urlRunBtn');
+            if (run) run.textContent = mode === 'encode' ? '编码' : '解码';
+        }
+
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function renderParse(raw) {
+            const card = document.getElementById('urlParseCard');
+            const list = document.getElementById('urlParseList');
+            if (!card || !list) return;
+            let url;
+            try {
+                url = new URL(raw);
+            } catch (_) {
+                card.classList.add('hidden');
+                list.innerHTML = '';
+                return;
+            }
+            const rows = [
+                ['协议', url.protocol.replace(/:$/, '')],
+                ['主机', url.host],
+                ['路径', url.pathname || '/'],
+                ['查询', url.search ? url.search.slice(1) : ''],
+                ['哈希', url.hash ? url.hash.slice(1) : '']
+            ];
+            const params = [];
+            url.searchParams.forEach((v, k) => {
+                params.push([`参数 ${k}`, v]);
+            });
+            const all = rows.concat(params).filter(([, v]) => v !== '');
+            if (!all.length) {
+                card.classList.add('hidden');
+                list.innerHTML = '';
+                return;
+            }
+            list.innerHTML = all.map(([k, v], i) => `
+                <div class="codec-parse-row">
+                    <span class="codec-parse-key">${escapeHtml(k)}</span>
+                    <span class="codec-parse-val">${escapeHtml(v)}</span>
+                    <button type="button" class="codec-text-btn url-parse-copy" data-idx="${i}">复制</button>
+                </div>
+            `).join('');
+            card.classList.remove('hidden');
+            list.querySelectorAll('.url-parse-copy').forEach((btn) => {
+                btn.addEventListener('click', () => {
+                    const idx = Number(btn.getAttribute('data-idx'));
+                    const val = all[idx] && all[idx][1];
+                    if (!val) return;
+                    navigator.clipboard.writeText(val).then(() => codecToast('已复制')).catch(() => codecToast('复制失败'));
+                });
+            });
+        }
+
+        function run(showEmptyError) {
+            const input = document.getElementById('urlInput')?.value ?? '';
             const output = document.getElementById('urlOutput');
             if (!output) return;
-
+            if (!input) {
+                output.value = '';
+                output.classList.remove('is-error');
+                renderParse('');
+                if (showEmptyError) codecToast('请先输入内容');
+                return;
+            }
             try {
-                output.value = decodeURIComponent(input);
+                if (mode === 'encode') {
+                    output.value = style() === 'uri' ? encodeURI(input) : encodeURIComponent(input);
+                } else {
+                    output.value = style() === 'uri' ? decodeURI(input) : decodeURIComponent(input);
+                }
+                output.classList.remove('is-error');
             } catch (e) {
                 output.value = '解码失败: 输入不是有效的 URL 编码';
+                output.classList.add('is-error');
             }
+            renderParse(input);
+        }
+
+        const debouncedRun = debounce(() => run(false), 120);
+
+        async function persist() {
+            if (typeof Settings === 'undefined' || !Settings.set) return;
+            await Settings.set('urlOptions', { mode, style: style() });
+        }
+        const debouncedPersist = debounce(() => { persist(); }, 400);
+
+        document.querySelectorAll('[data-url-mode]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                mode = btn.getAttribute('data-url-mode') === 'decode' ? 'decode' : 'encode';
+                syncModeUI();
+                run(false);
+                debouncedPersist();
+            });
         });
+        document.getElementById('urlEncodeStyle')?.addEventListener('change', () => { run(false); debouncedPersist(); });
+        document.getElementById('urlRunBtn')?.addEventListener('click', () => run(true));
+        document.getElementById('urlInput')?.addEventListener('input', debouncedRun);
+        document.getElementById('urlSwapBtn')?.addEventListener('click', () => {
+            const inEl = document.getElementById('urlInput');
+            const outEl = document.getElementById('urlOutput');
+            if (!inEl || !outEl || outEl.classList.contains('is-error')) return;
+            const tmp = inEl.value;
+            inEl.value = outEl.value;
+            outEl.value = tmp;
+            mode = mode === 'encode' ? 'decode' : 'encode';
+            syncModeUI();
+            run(false);
+            debouncedPersist();
+        });
+        document.getElementById('urlCopyBtn')?.addEventListener('click', () => {
+            const v = document.getElementById('urlOutput')?.value || '';
+            if (!v || document.getElementById('urlOutput')?.classList.contains('is-error')) {
+                codecToast('没有可复制的结果');
+                return;
+            }
+            navigator.clipboard.writeText(v).then(() => codecToast('已复制')).catch(() => codecToast('复制失败'));
+        });
+        document.getElementById('urlClearBtn')?.addEventListener('click', () => {
+            const inEl = document.getElementById('urlInput');
+            const outEl = document.getElementById('urlOutput');
+            if (inEl) inEl.value = '';
+            if (outEl) { outEl.value = ''; outEl.classList.remove('is-error'); }
+            renderParse('');
+        });
+
+        (async () => {
+            try {
+                if (typeof Settings !== 'undefined' && Settings.get) {
+                    const saved = await Settings.get('urlOptions');
+                    if (saved && typeof saved === 'object') {
+                        mode = saved.mode === 'decode' ? 'decode' : 'encode';
+                        const sel = document.getElementById('urlEncodeStyle');
+                        if (sel && (saved.style === 'uri' || saved.style === 'component')) {
+                            sel.value = saved.style;
+                        }
+                    }
+                }
+            } catch (_) { /* ignore */ }
+            syncModeUI();
+        })();
     }
 
     // ==================== JWT Tool ====================
     function initJwt() {
-        document.getElementById('jwtDecodeBtn')?.addEventListener('click', () => {
-            const input = document.getElementById('jwtInput')?.value?.trim() || '';
+        let lastPayloadJson = '';
+
+        function b64urlToBytes(str) {
+            let s = str.replace(/-/g, '+').replace(/_/g, '/');
+            const pad = s.length % 4;
+            if (pad) s += '='.repeat(4 - pad);
+            const bin = atob(s);
+            const out = new Uint8Array(bin.length);
+            for (let i = 0; i < bin.length; i++) out[i] = bin.charCodeAt(i);
+            return out;
+        }
+
+        function b64urlJson(str) {
+            const bytes = b64urlToBytes(str);
+            const text = new TextDecoder().decode(bytes);
+            return JSON.parse(text);
+        }
+
+        function setStatus(text, kind) {
+            const el = document.getElementById('jwtStatusBadge');
+            if (!el) return;
+            el.textContent = text;
+            el.classList.remove('is-ok', 'is-error', 'is-warn');
+            if (kind) el.classList.add(kind);
+        }
+
+        function setVerifyHint(text, kind) {
+            const el = document.getElementById('jwtVerifyHint');
+            if (!el) return;
+            el.textContent = text;
+            el.classList.remove('is-ok', 'is-error', 'is-warn');
+            if (kind) el.classList.add(kind);
+        }
+
+        function relativeTime(date) {
+            const diff = date.getTime() - Date.now();
+            const abs = Math.abs(diff);
+            const mins = Math.round(abs / 60000);
+            if (mins < 1) return diff >= 0 ? '即将到期' : '刚刚过期';
+            if (mins < 60) return diff >= 0 ? `还剩 ${mins} 分钟` : `已过期 ${mins} 分钟`;
+            const hours = Math.round(mins / 60);
+            if (hours < 48) return diff >= 0 ? `还剩 ${hours} 小时` : `已过期 ${hours} 小时`;
+            const days = Math.round(hours / 24);
+            return diff >= 0 ? `还剩 ${days} 天` : `已过期 ${days} 天`;
+        }
+
+        function renderSegments(parts) {
+            const el = document.getElementById('jwtSegments');
+            if (!el) return;
+            if (!parts || parts.length !== 3) {
+                el.innerHTML = '';
+                return;
+            }
+            el.innerHTML =
+                `<span class="jwt-seg-h">${parts[0]}</span>` +
+                `<span class="jwt-seg-dot">.</span>` +
+                `<span class="jwt-seg-p">${parts[1]}</span>` +
+                `<span class="jwt-seg-dot">.</span>` +
+                `<span class="jwt-seg-s">${parts[2]}</span>`;
+        }
+
+        function renderClaims(payload) {
+            const wrap = document.getElementById('jwtClaims');
+            const card = document.getElementById('jwtClaimsCard');
+            if (!wrap) return;
+            const hide = () => {
+                wrap.innerHTML = '';
+                card?.classList.add('hidden');
+            };
+            if (!payload || typeof payload !== 'object') {
+                hide();
+                return;
+            }
+            const rows = [];
+            const push = (k, v, extra) => {
+                rows.push(`<div class="jwt-claim-row"><span class="jwt-claim-key">${k}</span><span class="jwt-claim-val">${v}${extra ? `<span class="muted">${extra}</span>` : ''}</span></div>`);
+            };
+            ['sub', 'iss', 'aud', 'jti'].forEach((k) => {
+                if (payload[k] == null) return;
+                const v = Array.isArray(payload[k]) ? payload[k].join(', ') : String(payload[k]);
+                push(k, v.replace(/&/g, '&amp;').replace(/</g, '&lt;'));
+            });
+            ['iat', 'nbf', 'exp'].forEach((k) => {
+                if (payload[k] == null) return;
+                const n = Number(payload[k]);
+                if (!Number.isFinite(n)) {
+                    push(k, String(payload[k]));
+                    return;
+                }
+                const d = new Date(n * 1000);
+                push(k, formatDate(d), relativeTime(d));
+            });
+            if (!rows.length) {
+                hide();
+                return;
+            }
+            wrap.innerHTML = rows.join('');
+            card?.classList.remove('hidden');
+        }
+
+        async function verifyHmac(token, secret, alg) {
+            const hashName = ({ HS256: 'SHA-256', HS384: 'SHA-384', HS512: 'SHA-512' })[alg];
+            if (!hashName) throw new Error('不支持的算法: ' + alg);
+            const parts = token.split('.');
+            if (parts.length !== 3) throw new Error('无效 Token');
+            const key = await crypto.subtle.importKey(
+                'raw',
+                new TextEncoder().encode(secret),
+                { name: 'HMAC', hash: hashName },
+                false,
+                ['verify']
+            );
+            const data = new TextEncoder().encode(parts[0] + '.' + parts[1]);
+            const sig = b64urlToBytes(parts[2]);
+            return crypto.subtle.verify('HMAC', key, sig, data);
+        }
+
+        async function parseJwt({ verify } = {}) {
+            const input = (document.getElementById('jwtInput')?.value || '').trim();
             const headerOut = document.getElementById('jwtHeader');
             const payloadOut = document.getElementById('jwtPayload');
-            const statusOut = document.getElementById('jwtStatus');
+            lastPayloadJson = '';
 
-            const parts = input.split('.');
-            if (parts.length !== 3) {
-                if (statusOut) statusOut.value = '无效的 JWT 格式 (应包含3个部分)';
+            if (!input) {
+                if (headerOut) headerOut.value = '';
+                if (payloadOut) payloadOut.value = '';
+                renderSegments(null);
+                renderClaims(null);
+                setStatus('等待输入');
+                setVerifyHint('未验签，仅本地解码。支持 HS256 / HS384 / HS512。');
                 return;
             }
 
+            const parts = input.split('.');
+            if (parts.length !== 3 || !parts[0] || !parts[1]) {
+                renderSegments(null);
+                renderClaims(null);
+                if (headerOut) headerOut.value = '';
+                if (payloadOut) payloadOut.value = '';
+                setStatus('格式无效', 'is-error');
+                setVerifyHint('无效的 JWT 格式（需要 header.payload.signature）', 'is-error');
+                return;
+            }
+
+            renderSegments(parts);
+
+            let header = null;
+            let payload = null;
             try {
-                const header = JSON.parse(atob(parts[0].replace(/-/g, '+').replace(/_/g, '/')));
+                header = b64urlJson(parts[0]);
                 if (headerOut) headerOut.value = JSON.stringify(header, null, 2);
-            } catch (e) {
-                if (headerOut) headerOut.value = '解析失败';
+            } catch (_) {
+                if (headerOut) headerOut.value = 'Header 解析失败';
+                setStatus('Header 无效', 'is-error');
             }
 
             try {
-                const payload = JSON.parse(atob(parts[1].replace(/-/g, '+').replace(/_/g, '/')));
-                if (payloadOut) payloadOut.value = JSON.stringify(payload, null, 2);
-
-                if (statusOut) {
-                    if (payload.exp) {
-                        const expDate = new Date(payload.exp * 1000);
-                        const isExpired = expDate < new Date();
-                        statusOut.value = isExpired
-                            ? `已过期 (${formatDate(expDate)})`
-                            : `有效 (过期时间: ${formatDate(expDate)})`;
-                    } else {
-                        statusOut.value = '无过期时间';
-                    }
-                }
-            } catch (e) {
-                if (payloadOut) payloadOut.value = '解析失败';
-                if (statusOut) statusOut.value = 'Payload 解析失败';
+                payload = b64urlJson(parts[1]);
+                lastPayloadJson = JSON.stringify(payload, null, 2);
+                if (payloadOut) payloadOut.value = lastPayloadJson;
+                renderClaims(payload);
+            } catch (_) {
+                if (payloadOut) payloadOut.value = 'Payload 解析失败';
+                renderClaims(null);
+                setStatus('Payload 无效', 'is-error');
+                return;
             }
+
+            let statusKind = 'is-ok';
+            let statusText = '已解码';
+            if (payload.exp != null) {
+                const expDate = new Date(Number(payload.exp) * 1000);
+                if (expDate < new Date()) {
+                    statusKind = 'is-error';
+                    statusText = '已过期';
+                } else {
+                    statusKind = 'is-ok';
+                    statusText = '未过期';
+                }
+            }
+            setStatus(statusText, statusKind);
+
+            const secret = document.getElementById('jwtSecret')?.value || '';
+            const alg = (header && header.alg) || '';
+            if (!secret) {
+                setVerifyHint('未验签，仅本地解码。支持 HS256 / HS384 / HS512。');
+                return;
+            }
+            if (!verify) {
+                setVerifyHint('已填写 Secret，点击「验签」进行 HMAC 验证。', 'is-warn');
+                return;
+            }
+            if (!/^HS(256|384|512)$/.test(alg)) {
+                setVerifyHint(`算法 ${alg || '未知'} 非 HMAC，本工具仅支持 HS256/384/512 验签。`, 'is-warn');
+                return;
+            }
+            try {
+                const ok = await verifyHmac(input, secret, alg);
+                if (ok) setVerifyHint(`签名有效（${alg}）`, 'is-ok');
+                else setVerifyHint(`签名无效（${alg}）`, 'is-error');
+            } catch (e) {
+                setVerifyHint('验签失败: ' + (e.message || '未知错误'), 'is-error');
+            }
+        }
+
+        const debouncedParse = debounce(() => { parseJwt({ verify: false }); }, 140);
+
+        document.getElementById('jwtInput')?.addEventListener('input', debouncedParse);
+        document.getElementById('jwtDecodeBtn')?.addEventListener('click', () => parseJwt({ verify: true }));
+        document.getElementById('jwtVerifyBtn')?.addEventListener('click', () => parseJwt({ verify: true }));
+        document.getElementById('jwtSecret')?.addEventListener('change', () => parseJwt({ verify: true }));
+        document.getElementById('jwtCopyTokenBtn')?.addEventListener('click', () => {
+            const v = (document.getElementById('jwtInput')?.value || '').trim();
+            if (!v) { codecToast('没有可复制的 Token'); return; }
+            navigator.clipboard.writeText(v).then(() => codecToast('已复制 Token')).catch(() => codecToast('复制失败'));
+        });
+        document.getElementById('jwtCopyPayloadBtn')?.addEventListener('click', () => {
+            if (!lastPayloadJson) { codecToast('还没有 Payload'); return; }
+            navigator.clipboard.writeText(lastPayloadJson).then(() => codecToast('已复制 Payload')).catch(() => codecToast('复制失败'));
+        });
+        document.getElementById('jwtCopyHeaderBtn')?.addEventListener('click', () => {
+            const v = document.getElementById('jwtHeader')?.value || '';
+            if (!v || v === 'Header 解析失败') { codecToast('还没有 Header'); return; }
+            navigator.clipboard.writeText(v).then(() => codecToast('已复制 Header')).catch(() => codecToast('复制失败'));
+        });
+        document.getElementById('jwtCopyPayloadJsonBtn')?.addEventListener('click', () => {
+            if (!lastPayloadJson) { codecToast('还没有 Payload'); return; }
+            navigator.clipboard.writeText(lastPayloadJson).then(() => codecToast('已复制 Payload')).catch(() => codecToast('复制失败'));
+        });
+        document.getElementById('jwtClearBtn')?.addEventListener('click', () => {
+            const ids = ['jwtInput', 'jwtHeader', 'jwtPayload', 'jwtSecret'];
+            ids.forEach((id) => {
+                const el = document.getElementById(id);
+                if (el) el.value = '';
+            });
+            lastPayloadJson = '';
+            renderSegments(null);
+            renderClaims(null);
+            setStatus('等待输入');
+            setVerifyHint('未验签，仅本地解码。支持 HS256 / HS384 / HS512。');
         });
     }
 
     // ==================== Hash Tool ====================
     function initHash() {
-        document.getElementById('hashCalcBtn')?.addEventListener('click', async () => {
+        let calcToken = 0;
+
+        function uppercaseOn() {
+            return !!document.getElementById('hashUppercase')?.checked;
+        }
+        function hmacOn() {
+            return !!document.getElementById('hashHmac')?.checked;
+        }
+        function hmacKey() {
+            return document.getElementById('hashHmacKey')?.value || '';
+        }
+
+        function formatHex(hex) {
+            return uppercaseOn() ? hex.toUpperCase() : hex.toLowerCase();
+        }
+
+        function setRow(id, value, disabled) {
+            const el = document.getElementById(id);
+            const row = el?.closest('.hash-result-row');
+            if (!el) return;
+            el.textContent = value || '—';
+            if (row) row.classList.toggle('is-disabled', !!disabled);
+        }
+
+        function updateMeta() {
             const input = document.getElementById('hashInput')?.value || '';
+            const meta = document.getElementById('hashMeta');
+            if (meta) meta.textContent = `${input.length} 字符 · ${utf8ByteLength(input)} 字节`;
+        }
 
-            // MD5
-            const md5Out = document.getElementById('hashMd5');
-            if (md5Out) md5Out.value = md5(input);
+        function syncHmacUI() {
+            const key = document.getElementById('hashHmacKey');
+            if (key) key.disabled = !hmacOn();
+        }
 
-            const encoder = new TextEncoder();
-            const data = encoder.encode(input);
+        async function hmacHex(algo, key, dataBytes) {
+            const cryptoKey = await crypto.subtle.importKey(
+                'raw',
+                new TextEncoder().encode(key),
+                { name: 'HMAC', hash: algo },
+                false,
+                ['sign']
+            );
+            const sig = await crypto.subtle.sign('HMAC', cryptoKey, dataBytes);
+            return bufferToHex(sig);
+        }
 
-            // SHA-1
+        async function calculate() {
+            const token = ++calcToken;
+            const input = document.getElementById('hashInput')?.value || '';
+            updateMeta();
+            syncHmacUI();
+
+            if (!input && !hmacOn()) {
+                setRow('hashMd5', '—');
+                setRow('hashSha1', '—');
+                setRow('hashSha256', '—');
+                setRow('hashSha512', '—');
+                return;
+            }
+
+            const data = new TextEncoder().encode(input);
+            const useHmac = hmacOn();
+            const key = hmacKey();
+
+            if (useHmac) {
+                setRow('hashMd5', 'HMAC 不适用', true);
+                if (!key) {
+                    setRow('hashSha1', '需要 Key', true);
+                    setRow('hashSha256', '需要 Key', true);
+                    setRow('hashSha512', '需要 Key', true);
+                    return;
+                }
+                try {
+                    const [s1, s256, s512] = await Promise.all([
+                        hmacHex('SHA-1', key, data),
+                        hmacHex('SHA-256', key, data),
+                        hmacHex('SHA-512', key, data)
+                    ]);
+                    if (token !== calcToken) return;
+                    setRow('hashSha1', formatHex(s1));
+                    setRow('hashSha256', formatHex(s256));
+                    setRow('hashSha512', formatHex(s512));
+                } catch (e) {
+                    if (token !== calcToken) return;
+                    setRow('hashSha1', '计算失败', true);
+                    setRow('hashSha256', '计算失败', true);
+                    setRow('hashSha512', '计算失败', true);
+                }
+                return;
+            }
+
+            setRow('hashMd5', formatHex(md5(input)));
             try {
-                const sha1Buffer = await crypto.subtle.digest('SHA-1', data);
-                const sha1Out = document.getElementById('hashSha1');
-                if (sha1Out) sha1Out.value = bufferToHex(sha1Buffer);
-            } catch (e) { }
+                const [s1, s256, s512] = await Promise.all([
+                    crypto.subtle.digest('SHA-1', data).then(bufferToHex),
+                    crypto.subtle.digest('SHA-256', data).then(bufferToHex),
+                    crypto.subtle.digest('SHA-512', data).then(bufferToHex)
+                ]);
+                if (token !== calcToken) return;
+                setRow('hashSha1', formatHex(s1));
+                setRow('hashSha256', formatHex(s256));
+                setRow('hashSha512', formatHex(s512));
+            } catch (_) {
+                if (token !== calcToken) return;
+                setRow('hashSha1', '计算失败', true);
+                setRow('hashSha256', '计算失败', true);
+                setRow('hashSha512', '计算失败', true);
+            }
+        }
 
-            // SHA-256
-            try {
-                const sha256Buffer = await crypto.subtle.digest('SHA-256', data);
-                const sha256Out = document.getElementById('hashSha256');
-                if (sha256Out) sha256Out.value = bufferToHex(sha256Buffer);
-            } catch (e) { }
+        const debouncedCalc = debounce(() => { calculate(); }, 120);
 
-            // SHA-512
-            try {
-                const sha512Buffer = await crypto.subtle.digest('SHA-512', data);
-                const sha512Out = document.getElementById('hashSha512');
-                if (sha512Out) sha512Out.value = bufferToHex(sha512Buffer);
-            } catch (e) { }
+        async function persist() {
+            if (typeof Settings === 'undefined' || !Settings.set) return;
+            await Settings.set('hashOptions', {
+                uppercase: uppercaseOn(),
+                hmac: hmacOn()
+            });
+        }
+        const debouncedPersist = debounce(() => { persist(); }, 400);
+
+        document.getElementById('hashInput')?.addEventListener('input', () => {
+            updateMeta();
+            debouncedCalc();
+        });
+        document.getElementById('hashCalcBtn')?.addEventListener('click', () => calculate());
+        document.getElementById('hashUppercase')?.addEventListener('change', () => {
+            calculate();
+            debouncedPersist();
+        });
+        document.getElementById('hashHmac')?.addEventListener('change', () => {
+            syncHmacUI();
+            calculate();
+            debouncedPersist();
+        });
+        document.getElementById('hashHmacKey')?.addEventListener('input', debouncedCalc);
+        document.getElementById('hashClearBtn')?.addEventListener('click', () => {
+            const inEl = document.getElementById('hashInput');
+            if (inEl) inEl.value = '';
+            calculate();
         });
 
-        // 点击复制哈希值功能
-        const hashFields = ['hashMd5', 'hashSha1', 'hashSha256', 'hashSha512'];
-        hashFields.forEach(fieldId => {
-            document.getElementById(fieldId)?.addEventListener('click', function () {
-                const value = this.value;
-                if (!value) return;
-
-                navigator.clipboard.writeText(value).then(() => {
-                    const originalPlaceholder = this.placeholder;
-                    const originalValue = this.value;
-                    this.value = '✅ 已复制!';
-                    this.style.color = '#10b981';
-                    setTimeout(() => {
-                        this.value = originalValue;
-                        this.style.color = '';
-                    }, 1000);
-                });
+        document.querySelectorAll('.hash-copy-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-target');
+                const el = id && document.getElementById(id);
+                const v = el?.textContent || '';
+                if (!v || v === '—' || v.includes('不适用') || v.includes('需要') || v.includes('失败')) {
+                    codecToast('没有可复制的哈希');
+                    return;
+                }
+                navigator.clipboard.writeText(v).then(() => codecToast('已复制')).catch(() => codecToast('复制失败'));
             });
         });
+
+        (async () => {
+            try {
+                if (typeof Settings !== 'undefined' && Settings.get) {
+                    const saved = await Settings.get('hashOptions');
+                    if (saved && typeof saved === 'object') {
+                        if (document.getElementById('hashUppercase')) {
+                            document.getElementById('hashUppercase').checked = !!saved.uppercase;
+                        }
+                        if (document.getElementById('hashHmac')) {
+                            document.getElementById('hashHmac').checked = !!saved.hmac;
+                        }
+                    }
+                }
+            } catch (_) { /* ignore */ }
+            syncHmacUI();
+            updateMeta();
+        })();
     }
 
     function bufferToHex(buffer) {
@@ -1016,157 +1641,528 @@
         return hex(md51(string));
     }
 
-    // ==================== UUID Tool ====================
+    // ==================== UUID / ID Tool ====================
     function initUuid() {
-        // 更新行号列
-        function updateLineNumbers(count) {
-            const lineNumbers = document.getElementById('uuidLineNumbers');
-            if (!lineNumbers) return;
+        let generatedIds = [];
+        let currentType = 'uuid';
 
-            const lines = [];
-            for (let i = 1; i <= count; i++) {
-                lines.push(i + '.');
+        const TYPE_DESC = {
+            uuid: '加密安全的 UUID v4，适合通用唯一标识。',
+            snowflake: '趋势递增的 64-bit 雪花 ID，适合分布式主键。',
+            nanoid: '短小 URL 友好的随机 ID，适合公开链接与令牌。'
+        };
+
+        const NANO_ALPHABETS = {
+            url: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_',
+            alnum: 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789',
+            numeric: '0123456789'
+        };
+
+        function toast(msg) {
+            if (DevKit.App && typeof DevKit.App.showToast === 'function') {
+                DevKit.App.showToast(msg);
             }
-            lineNumbers.innerHTML = lines.join('<br>');
         }
 
-        document.getElementById('uuidGenerateBtn')?.addEventListener('click', () => {
-            const count = parseInt(document.getElementById('uuidCount')?.value) || 5;
-            const output = document.getElementById('uuidOutput');
-            if (!output) return;
+        function clamp(n, min, max, fallback) {
+            const v = Number.parseInt(n, 10);
+            if (!Number.isFinite(v)) return fallback;
+            return Math.min(max, Math.max(min, v));
+        }
 
-            const uuids = [];
-            for (let i = 0; i < count; i++) {
-                uuids.push(generateUUIDv4());
+        function randomIndex(maxExclusive) {
+            if (maxExclusive <= 0) return 0;
+            const limit = Math.floor(0x100000000 / maxExclusive) * maxExclusive;
+            const buf = new Uint32Array(1);
+            let x;
+            do {
+                crypto.getRandomValues(buf);
+                x = buf[0];
+            } while (x >= limit);
+            return x % maxExclusive;
+        }
+
+        function generateUUIDv4(opts) {
+            const bytes = new Uint8Array(16);
+            crypto.getRandomValues(bytes);
+            bytes[6] = (bytes[6] & 0x0f) | 0x40;
+            bytes[8] = (bytes[8] & 0x3f) | 0x80;
+            const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
+            let id = opts.uuidHyphen
+                ? `${hex.slice(0, 8)}-${hex.slice(8, 12)}-${hex.slice(12, 16)}-${hex.slice(16, 20)}-${hex.slice(20)}`
+                : hex;
+            if (opts.uuidUppercase) id = id.toUpperCase();
+            return id;
+        }
+
+        let snowflakeSequence = 0;
+        let snowflakeLastTs = 0;
+
+        function generateSnowflakeId(opts) {
+            let timestamp = Date.now();
+            if (timestamp === snowflakeLastTs) {
+                snowflakeSequence = (snowflakeSequence + 1) & 0xFFF;
+                if (snowflakeSequence === 0) {
+                    while (timestamp <= snowflakeLastTs) { timestamp = Date.now(); }
+                }
+            } else {
+                snowflakeSequence = 0;
             }
-            output.value = uuids.join('\n');
-            updateLineNumbers(count);
-        });
+            snowflakeLastTs = timestamp;
+            const workerId = BigInt(clamp(opts.snowflakeWorker, 0, 31, 1));
+            const datacenterId = BigInt(clamp(opts.snowflakeDatacenter, 0, 31, 1));
+            // Twitter layout: timestamp | datacenter(5) | worker(5) | sequence(12)
+            return ((BigInt(timestamp) - BigInt(1288834974657)) << BigInt(22) |
+                (datacenterId << BigInt(17)) |
+                (workerId << BigInt(12)) |
+                BigInt(snowflakeSequence)).toString();
+        }
 
-        document.getElementById('snowflakeGenerateBtn')?.addEventListener('click', () => {
-            const count = parseInt(document.getElementById('uuidCount')?.value) || 5;
-            const output = document.getElementById('uuidOutput');
-            if (!output) return;
-
-            const ids = [];
-            for (let i = 0; i < count; i++) {
-                ids.push(generateSnowflakeId());
+        function generateNanoId(opts) {
+            const size = clamp(opts.nanoidSize, 8, 64, 21);
+            const alphabet = NANO_ALPHABETS[opts.nanoidAlphabet] || NANO_ALPHABETS.url;
+            let id = '';
+            for (let i = 0; i < size; i++) {
+                id += alphabet[randomIndex(alphabet.length)];
             }
-            output.value = ids.join('\n');
-            updateLineNumbers(count);
-        });
+            return id;
+        }
 
-        document.getElementById('nanoidGenerateBtn')?.addEventListener('click', () => {
-            const count = parseInt(document.getElementById('uuidCount')?.value) || 5;
-            const output = document.getElementById('uuidOutput');
-            if (!output) return;
+        function readOptionsFromUI() {
+            return {
+                type: currentType,
+                count: clamp(document.getElementById('idCount')?.value, 1, 50, 5),
+                uuidHyphen: !!document.getElementById('idUuidHyphen')?.checked,
+                uuidUppercase: !!document.getElementById('idUuidUppercase')?.checked,
+                snowflakeWorker: clamp(document.getElementById('idSnowflakeWorker')?.value, 0, 31, 1),
+                snowflakeDatacenter: clamp(document.getElementById('idSnowflakeDatacenter')?.value, 0, 31, 1),
+                nanoidSize: clamp(document.getElementById('idNanoidSize')?.value, 8, 64, 21),
+                nanoidAlphabet: document.getElementById('idNanoidAlphabet')?.value || 'url'
+            };
+        }
 
-            const ids = [];
-            for (let i = 0; i < count; i++) {
-                ids.push(generateNanoId());
+        function applyOptionsToUI(opts) {
+            if (!opts) return;
+            currentType = ['uuid', 'snowflake', 'nanoid'].includes(opts.type) ? opts.type : 'uuid';
+            const countEl = document.getElementById('idCount');
+            if (countEl) countEl.value = clamp(opts.count, 1, 50, 5);
+            const setChecked = (id, v) => {
+                const el = document.getElementById(id);
+                if (el) el.checked = !!v;
+            };
+            setChecked('idUuidHyphen', opts.uuidHyphen !== false);
+            setChecked('idUuidUppercase', !!opts.uuidUppercase);
+            const w = document.getElementById('idSnowflakeWorker');
+            if (w) w.value = clamp(opts.snowflakeWorker, 0, 31, 1);
+            const d = document.getElementById('idSnowflakeDatacenter');
+            if (d) d.value = clamp(opts.snowflakeDatacenter, 0, 31, 1);
+            const s = document.getElementById('idNanoidSize');
+            if (s) s.value = clamp(opts.nanoidSize, 8, 64, 21);
+            const a = document.getElementById('idNanoidAlphabet');
+            if (a) a.value = NANO_ALPHABETS[opts.nanoidAlphabet] ? opts.nanoidAlphabet : 'url';
+            syncTypeUI();
+        }
+
+        function syncTypeUI() {
+            document.querySelectorAll('.id-type-btn').forEach((btn) => {
+                btn.classList.toggle('active', btn.getAttribute('data-id-type') === currentType);
+            });
+            document.getElementById('idOptionsUuid')?.classList.toggle('hidden', currentType !== 'uuid');
+            document.getElementById('idOptionsSnowflake')?.classList.toggle('hidden', currentType !== 'snowflake');
+            document.getElementById('idOptionsNanoid')?.classList.toggle('hidden', currentType !== 'nanoid');
+            const desc = document.getElementById('idTypeDesc');
+            if (desc) desc.textContent = TYPE_DESC[currentType] || TYPE_DESC.uuid;
+            const placeholder = document.getElementById('idPlaceholder');
+            if (placeholder && generatedIds.length === 0) {
+                placeholder.textContent = TYPE_DESC[currentType] || '生成的 ID 将显示在这里';
             }
-            output.value = ids.join('\n');
-            updateLineNumbers(count);
-        });
+        }
 
-        // 同步滚动行号列与输出框
-        const uuidOutput = document.getElementById('uuidOutput');
-        const lineNumbers = document.getElementById('uuidLineNumbers');
-        if (uuidOutput && lineNumbers) {
-            uuidOutput.addEventListener('scroll', () => {
-                lineNumbers.scrollTop = uuidOutput.scrollTop;
+        async function persistOptions() {
+            if (typeof Settings === 'undefined' || !Settings.set) return;
+            await Settings.set('uuidOptions', readOptionsFromUI());
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function copyId(text) {
+            navigator.clipboard.writeText(text).then(() => toast('已复制')).catch(() => toast('复制失败'));
+        }
+
+        function makeOne(opts) {
+            if (currentType === 'snowflake') return generateSnowflakeId(opts);
+            if (currentType === 'nanoid') return generateNanoId(opts);
+            return generateUUIDv4(opts);
+        }
+
+        function renderList(ids) {
+            const list = document.getElementById('idOutputList');
+            if (!list) return;
+            generatedIds = ids;
+            list.innerHTML = '';
+
+            if (!ids.length) {
+                list.innerHTML = `<div class="id-placeholder" id="idPlaceholder">${escapeHtml(TYPE_DESC[currentType])}</div>`;
+                return;
+            }
+
+            ids.forEach((id, index) => {
+                const row = document.createElement('div');
+                row.className = 'id-row';
+                row.innerHTML = `
+                    <span class="id-index">${index + 1}</span>
+                    <span class="id-text" title="点击复制">${escapeHtml(id)}</span>
+                    <button type="button" class="id-copy-btn" title="复制">复制</button>
+                    <button type="button" class="id-regen-btn" title="重新生成这条">换</button>
+                `;
+                const textEl = row.querySelector('.id-text');
+                const copyBtn = row.querySelector('.id-copy-btn');
+                const regenBtn = row.querySelector('.id-regen-btn');
+                const copyCurrent = () => copyId(generatedIds[index]);
+                textEl.addEventListener('click', copyCurrent);
+                copyBtn.addEventListener('click', copyCurrent);
+                regenBtn.addEventListener('click', () => {
+                    const opts = readOptionsFromUI();
+                    const next = makeOne(opts);
+                    generatedIds[index] = next;
+                    textEl.textContent = next;
+                });
+                list.appendChild(row);
             });
         }
-    }
 
-    function generateUUIDv4() {
-        const bytes = new Uint8Array(16);
-        crypto.getRandomValues(bytes);
-        bytes[6] = (bytes[6] & 0x0f) | 0x40;
-        bytes[8] = (bytes[8] & 0x3f) | 0x80;
-        const hex = Array.from(bytes, b => b.toString(16).padStart(2, '0')).join('');
-        return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
-    }
-
-    let snowflakeSequence = 0;
-    let snowflakeLastTs = 0;
-
-    function generateSnowflakeId() {
-        let timestamp = Date.now();
-        if (timestamp === snowflakeLastTs) {
-            snowflakeSequence = (snowflakeSequence + 1) & 0xFFF;
-            if (snowflakeSequence === 0) {
-                while (timestamp <= snowflakeLastTs) { timestamp = Date.now(); }
+        function generateAll() {
+            const opts = readOptionsFromUI();
+            const ids = [];
+            for (let i = 0; i < opts.count; i++) {
+                ids.push(makeOne(opts));
             }
-        } else {
-            snowflakeSequence = 0;
+            renderList(ids);
+            persistOptions();
         }
-        snowflakeLastTs = timestamp;
-        const workerId = BigInt(1);
-        return ((BigInt(timestamp) - BigInt(1288834974657)) << BigInt(22) |
-            (workerId << BigInt(12)) |
-            BigInt(snowflakeSequence)).toString();
-    }
 
-    function generateNanoId(size = 21) {
-        const alphabet = 'ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmnopqrstuvwxyz0123456789-_';
-        const randomValues = new Uint32Array(size);
-        crypto.getRandomValues(randomValues);
-        let id = '';
-        for (let i = 0; i < size; i++) {
-            id += alphabet[randomValues[i] % alphabet.length];
-        }
-        return id;
+        document.querySelectorAll('.id-type-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                currentType = btn.getAttribute('data-id-type') || 'uuid';
+                syncTypeUI();
+                persistOptions();
+            });
+        });
+
+        document.getElementById('idGenerateBtn')?.addEventListener('click', generateAll);
+        document.getElementById('idCopyAllBtn')?.addEventListener('click', () => {
+            if (!generatedIds.length) {
+                toast('还没有 ID');
+                return;
+            }
+            navigator.clipboard.writeText(generatedIds.join('\n'))
+                .then(() => toast(`已复制 ${generatedIds.length} 条`))
+                .catch(() => toast('复制失败'));
+        });
+
+        const optionIds = [
+            'idCount', 'idUuidHyphen', 'idUuidUppercase',
+            'idSnowflakeWorker', 'idSnowflakeDatacenter',
+            'idNanoidSize', 'idNanoidAlphabet'
+        ];
+        optionIds.forEach((id) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('change', () => {
+                persistOptions();
+            });
+        });
+
+        (async () => {
+            try {
+                if (typeof Settings !== 'undefined' && Settings.get) {
+                    const saved = await Settings.get('uuidOptions');
+                    if (saved && typeof saved === 'object') {
+                        applyOptionsToUI(saved);
+                    } else {
+                        syncTypeUI();
+                    }
+                } else {
+                    syncTypeUI();
+                }
+            } catch (_) {
+                syncTypeUI();
+            }
+        })();
     }
 
     // ==================== Password Generator ====================
     function initPassword() {
-        let generatedPasswords = []; // 存储生成的密码
+        let generatedPasswords = [];
+        let currentMode = 'random';
 
-        // 安全的随机密码生成
+        const AMBIGUOUS = /[0Ool1I|]/g;
+        const DEFAULT_SYMBOL_CHARSET = '!@#$%^&*()_+-=[]{}|;:,.<>?';
+        const CHAR_SETS = {
+            uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
+            lowercase: 'abcdefghijklmnopqrstuvwxyz',
+            numbers: '0123456789',
+            symbols: DEFAULT_SYMBOL_CHARSET
+        };
+
+        // Keep unique printable non-whitespace symbols; fall back to default if empty.
+        function normalizeSymbolCharset(raw) {
+            const src = String(raw == null ? '' : raw);
+            let out = '';
+            const seen = Object.create(null);
+            for (const ch of src) {
+                const code = ch.codePointAt(0);
+                if (code <= 0x20 || code === 0x7f) continue; // skip whitespace / DEL
+                if (seen[ch]) continue;
+                seen[ch] = true;
+                out += ch;
+            }
+            return out || DEFAULT_SYMBOL_CHARSET;
+        }
+
+        function toast(msg) {
+            if (DevKit.App && typeof DevKit.App.showToast === 'function') {
+                DevKit.App.showToast(msg);
+            }
+        }
+
+        function clamp(n, min, max, fallback) {
+            const v = Number.parseInt(n, 10);
+            if (!Number.isFinite(v)) return fallback;
+            return Math.min(max, Math.max(min, v));
+        }
+
+        // Unbiased index in [0, maxExclusive)
+        function randomIndex(maxExclusive) {
+            if (maxExclusive <= 0) return 0;
+            const limit = Math.floor(0x100000000 / maxExclusive) * maxExclusive;
+            const buf = new Uint32Array(1);
+            let x;
+            do {
+                crypto.getRandomValues(buf);
+                x = buf[0];
+            } while (x >= limit);
+            return x % maxExclusive;
+        }
+
+        function pickChar(pool) {
+            return pool[randomIndex(pool.length)];
+        }
+
+        function shuffleInPlace(arr) {
+            for (let i = arr.length - 1; i > 0; i--) {
+                const j = randomIndex(i + 1);
+                const tmp = arr[i];
+                arr[i] = arr[j];
+                arr[j] = tmp;
+            }
+            return arr;
+        }
+
+        function filterAmbiguous(str, exclude) {
+            if (!exclude) return str;
+            return str.replace(AMBIGUOUS, '');
+        }
+
+        function buildPools(options) {
+            const pools = [];
+            if (options.uppercase) {
+                const s = filterAmbiguous(CHAR_SETS.uppercase, options.excludeAmbiguous);
+                if (s) pools.push(s);
+            }
+            if (options.lowercase) {
+                const s = filterAmbiguous(CHAR_SETS.lowercase, options.excludeAmbiguous);
+                if (s) pools.push(s);
+            }
+            if (options.numbers) {
+                const s = filterAmbiguous(CHAR_SETS.numbers, options.excludeAmbiguous);
+                if (s) pools.push(s);
+            }
+            if (options.symbols) {
+                const custom = normalizeSymbolCharset(options.symbolCharset);
+                const s = filterAmbiguous(custom, options.excludeAmbiguous);
+                if (s) pools.push(s);
+            }
+            if (pools.length === 0) {
+                pools.push(filterAmbiguous(CHAR_SETS.lowercase, options.excludeAmbiguous) || CHAR_SETS.lowercase);
+            }
+            return pools;
+        }
+
         function generatePassword(length, options) {
-            const charSets = {
-                uppercase: 'ABCDEFGHIJKLMNOPQRSTUVWXYZ',
-                lowercase: 'abcdefghijklmnopqrstuvwxyz',
-                numbers: '0123456789',
-                symbols: '!@#$%^&*()_+-=[]{}|;:,.<>?'
+            const len = clamp(length, 4, 128, 16);
+            const pools = buildPools(options);
+            const merged = pools.join('');
+            const chars = [];
+
+            // Guarantee at least one from each selected pool (when length allows)
+            const guaranteeCount = Math.min(pools.length, len);
+            for (let i = 0; i < guaranteeCount; i++) {
+                chars.push(pickChar(pools[i]));
+            }
+            for (let i = guaranteeCount; i < len; i++) {
+                chars.push(pickChar(merged));
+            }
+            return shuffleInPlace(chars).join('');
+        }
+
+        function generatePassphrase(options) {
+            const wordlist = (DevKit.PASSWORD_WORDLIST && DevKit.PASSWORD_WORDLIST.length)
+                ? DevKit.PASSWORD_WORDLIST
+                : ['correct', 'horse', 'battery', 'staple', 'orbit', 'lantern', 'meadow', 'silver'];
+            const wordCount = clamp(options.wordCount, 3, 10, 4);
+            const sep = (options.phraseSeparator != null && String(options.phraseSeparator).length)
+                ? String(options.phraseSeparator).slice(0, 3)
+                : '-';
+            const words = [];
+            for (let i = 0; i < wordCount; i++) {
+                let w = wordlist[randomIndex(wordlist.length)];
+                if (options.phraseCapitalize) {
+                    w = w.charAt(0).toUpperCase() + w.slice(1);
+                }
+                words.push(w);
+            }
+            let phrase = words.join(sep);
+            if (options.phraseNumber) {
+                phrase += String(randomIndex(10));
+            }
+            return phrase;
+        }
+
+        function poolSize(options) {
+            if (currentMode === 'passphrase') {
+                const wl = (DevKit.PASSWORD_WORDLIST && DevKit.PASSWORD_WORDLIST.length) || 2048;
+                return wl;
+            }
+            return buildPools(options).join('').length || 26;
+        }
+
+        function estimateEntropyBits(options) {
+            if (currentMode === 'passphrase') {
+                const words = clamp(options.wordCount, 3, 10, 4);
+                const wl = (DevKit.PASSWORD_WORDLIST && DevKit.PASSWORD_WORDLIST.length) || 2048;
+                let bits = words * Math.log2(wl);
+                if (options.phraseNumber) bits += Math.log2(10);
+                return bits;
+            }
+            const len = clamp(options.length, 4, 128, 16);
+            const size = poolSize(options);
+            return len * Math.log2(Math.max(2, size));
+        }
+
+        function updateStrengthMeter(options) {
+            const bits = estimateEntropyBits(options);
+            const fill = document.getElementById('pwdStrengthFill');
+            const label = document.getElementById('pwdStrengthLabel');
+            const wrap = document.getElementById('pwdStrength');
+            if (!fill || !label || !wrap) return;
+
+            let level = 'weak';
+            let text = '弱';
+            let pct = 28;
+            if (bits >= 80) {
+                level = 'strong';
+                text = '强';
+                pct = 100;
+            } else if (bits >= 50) {
+                level = 'medium';
+                text = '中';
+                pct = 62;
+            }
+            wrap.dataset.level = level;
+            fill.style.width = pct + '%';
+            label.textContent = `${text} · 约 ${Math.round(bits)} bit`;
+        }
+
+        function readOptionsFromUI() {
+            return {
+                mode: currentMode,
+                length: clamp(document.getElementById('pwdLength')?.value, 4, 128, 16),
+                count: clamp(document.getElementById('pwdCount')?.value, 1, 50, 5),
+                uppercase: !!document.getElementById('pwdUppercase')?.checked,
+                lowercase: !!document.getElementById('pwdLowercase')?.checked,
+                numbers: !!document.getElementById('pwdNumbers')?.checked,
+                symbols: !!document.getElementById('pwdSymbols')?.checked,
+                symbolCharset: normalizeSymbolCharset(document.getElementById('pwdSymbolCharset')?.value),
+                excludeAmbiguous: !!document.getElementById('pwdExcludeAmbiguous')?.checked,
+                wordCount: clamp(document.getElementById('pwdWordCount')?.value, 3, 10, 4),
+                phraseSeparator: document.getElementById('pwdPhraseSeparator')?.value ?? '-',
+                phraseCapitalize: !!document.getElementById('pwdPhraseCapitalize')?.checked,
+                phraseNumber: !!document.getElementById('pwdPhraseNumber')?.checked
             };
-
-            let chars = '';
-            if (options.uppercase) chars += charSets.uppercase;
-            if (options.lowercase) chars += charSets.lowercase;
-            if (options.numbers) chars += charSets.numbers;
-            if (options.symbols) chars += charSets.symbols;
-
-            if (chars.length === 0) {
-                chars = charSets.lowercase; // 默认使用小写字母
-            }
-
-            // 使用 crypto.getRandomValues 生成安全随机数
-            const array = new Uint32Array(length);
-            crypto.getRandomValues(array);
-
-            let password = '';
-            for (let i = 0; i < length; i++) {
-                password += chars[array[i] % chars.length];
-            }
-            return password;
         }
 
-        // 复制单个密码
-        function copyPassword(password, rowElement) {
+        function applyOptionsToUI(opts) {
+            if (!opts) return;
+            currentMode = opts.mode === 'passphrase' ? 'passphrase' : 'random';
+            const lengthEl = document.getElementById('pwdLength');
+            const countEl = document.getElementById('pwdCount');
+            if (lengthEl) lengthEl.value = clamp(opts.length, 4, 128, 16);
+            if (countEl) countEl.value = clamp(opts.count, 1, 50, 5);
+            const setChecked = (id, v) => {
+                const el = document.getElementById(id);
+                if (el) el.checked = !!v;
+            };
+            setChecked('pwdUppercase', opts.uppercase !== false);
+            setChecked('pwdLowercase', opts.lowercase !== false);
+            setChecked('pwdNumbers', opts.numbers !== false);
+            setChecked('pwdSymbols', !!opts.symbols);
+            setChecked('pwdExcludeAmbiguous', !!opts.excludeAmbiguous);
+            setChecked('pwdPhraseCapitalize', opts.phraseCapitalize !== false);
+            setChecked('pwdPhraseNumber', !!opts.phraseNumber);
+            const symbolEl = document.getElementById('pwdSymbolCharset');
+            if (symbolEl) {
+                symbolEl.value = normalizeSymbolCharset(
+                    opts.symbolCharset != null ? opts.symbolCharset : DEFAULT_SYMBOL_CHARSET
+                );
+            }
+            const wc = document.getElementById('pwdWordCount');
+            if (wc) wc.value = clamp(opts.wordCount, 3, 10, 4);
+            const sep = document.getElementById('pwdPhraseSeparator');
+            if (sep) sep.value = opts.phraseSeparator != null ? String(opts.phraseSeparator).slice(0, 3) : '-';
+            syncModeUI();
+            syncSymbolsBlock();
+        }
+
+        function syncModeUI() {
+            document.getElementById('pwdModeRandom')?.classList.toggle('active', currentMode === 'random');
+            document.getElementById('pwdModePassphrase')?.classList.toggle('active', currentMode === 'passphrase');
+            document.getElementById('pwdRandomOptions')?.classList.toggle('hidden', currentMode !== 'random');
+            document.getElementById('pwdPassphraseOptions')?.classList.toggle('hidden', currentMode !== 'passphrase');
+            document.getElementById('pwdPresets')?.classList.toggle('is-passphrase', currentMode === 'passphrase');
+        }
+
+        function syncSymbolsBlock() {
+            const enabled = !!document.getElementById('pwdSymbols')?.checked;
+            const block = document.getElementById('pwdSymbolsBlock');
+            if (block) block.classList.toggle('is-disabled', !enabled);
+            const input = document.getElementById('pwdSymbolCharset');
+            const resetBtn = document.getElementById('pwdResetSymbolsBtn');
+            if (input) input.disabled = !enabled;
+            if (resetBtn) resetBtn.disabled = !enabled;
+        }
+
+        async function persistOptions() {
+            if (typeof Settings === 'undefined' || !Settings.set) return;
+            await Settings.set('pwdOptions', readOptionsFromUI());
+        }
+
+        function escapeHtml(text) {
+            const div = document.createElement('div');
+            div.textContent = text;
+            return div.innerHTML;
+        }
+
+        function copyPassword(password) {
             navigator.clipboard.writeText(password).then(() => {
-                const originalText = rowElement.querySelector('.password-text').textContent;
-                rowElement.querySelector('.password-text').textContent = '✅ 已复制!';
-                rowElement.querySelector('.password-text').style.color = '#10b981';
-                setTimeout(() => {
-                    rowElement.querySelector('.password-text').textContent = originalText;
-                    rowElement.querySelector('.password-text').style.color = '';
-                }, 1000);
-            });
+                toast('已复制');
+            }).catch(() => toast('复制失败'));
         }
 
-        // 渲染密码列表
         function renderPasswordList(passwords) {
             const listContainer = document.getElementById('pwdOutputList');
             if (!listContainer) return;
@@ -1174,525 +2170,1798 @@
             generatedPasswords = passwords;
             listContainer.innerHTML = '';
 
-            // HTML转义函数，防止特殊字符被解析为HTML
-            function escapeHtml(text) {
-                const div = document.createElement('div');
-                div.textContent = text;
-                return div.innerHTML;
+            if (!passwords.length) {
+                listContainer.innerHTML = '<div class="password-placeholder">生成的密码将显示在这里</div>';
+                return;
             }
 
             passwords.forEach((pwd, index) => {
                 const row = document.createElement('div');
                 row.className = 'password-row';
+                row.dataset.index = String(index);
                 row.innerHTML = `
-                    <span class="password-index">${index + 1}.</span>
-                    <span class="password-text">${escapeHtml(pwd)}</span>
-                    <button class="password-copy-btn" title="复制此密码">📋</button>
+                    <span class="password-index">${index + 1}</span>
+                    <span class="password-text" title="点击复制">${escapeHtml(pwd)}</span>
+                    <button type="button" class="password-copy-btn" title="复制">复制</button>
+                    <button type="button" class="password-regen-btn" title="重新生成这条">换</button>
                 `;
 
-                // 点击密码文本复制
-                row.querySelector('.password-text').addEventListener('click', () => {
-                    copyPassword(pwd, row);
-                });
+                const textEl = row.querySelector('.password-text');
+                const copyBtn = row.querySelector('.password-copy-btn');
+                const regenBtn = row.querySelector('.password-regen-btn');
 
-                // 点击复制按钮
-                row.querySelector('.password-copy-btn').addEventListener('click', () => {
-                    copyPassword(pwd, row);
+                const copyCurrent = () => copyPassword(generatedPasswords[index]);
+                textEl.addEventListener('click', copyCurrent);
+                copyBtn.addEventListener('click', copyCurrent);
+                regenBtn.addEventListener('click', () => {
+                    const opts = readOptionsFromUI();
+                    const next = currentMode === 'passphrase'
+                        ? generatePassphrase(opts)
+                        : generatePassword(opts.length, opts);
+                    generatedPasswords[index] = next;
+                    textEl.textContent = next;
+                    updateStrengthMeter(opts);
                 });
 
                 listContainer.appendChild(row);
             });
         }
 
-        // 生成密码按钮
-        document.getElementById('pwdGenerateBtn')?.addEventListener('click', () => {
-            const length = parseInt(document.getElementById('pwdLength')?.value) || 16;
-            const count = parseInt(document.getElementById('pwdCount')?.value) || 5;
-
-            const options = {
-                uppercase: document.getElementById('pwdUppercase')?.checked,
-                lowercase: document.getElementById('pwdLowercase')?.checked,
-                numbers: document.getElementById('pwdNumbers')?.checked,
-                symbols: document.getElementById('pwdSymbols')?.checked
-            };
-
+        function generateAll() {
+            const opts = readOptionsFromUI();
+            const count = opts.count;
             const passwords = [];
             for (let i = 0; i < count; i++) {
-                passwords.push(generatePassword(length, options));
+                passwords.push(
+                    currentMode === 'passphrase'
+                        ? generatePassphrase(opts)
+                        : generatePassword(opts.length, opts)
+                );
             }
             renderPasswordList(passwords);
+            updateStrengthMeter(opts);
+            persistOptions();
+        }
+
+        function applyPreset(name) {
+            currentMode = 'random';
+            const presets = {
+                pin: {
+                    uppercase: false, lowercase: false, numbers: true, symbols: false,
+                    excludeAmbiguous: false, length: 6, count: 5
+                },
+                readable: {
+                    uppercase: true, lowercase: true, numbers: true, symbols: false,
+                    excludeAmbiguous: true, length: 14, count: 5
+                },
+                strong: {
+                    uppercase: true, lowercase: true, numbers: true, symbols: true,
+                    excludeAmbiguous: false, length: 20, count: 5
+                },
+                wifi: {
+                    uppercase: true, lowercase: true, numbers: true, symbols: true,
+                    excludeAmbiguous: true, length: 16, count: 3
+                }
+            };
+            const p = presets[name];
+            if (!p) return;
+            applyOptionsToUI({ ...readOptionsFromUI(), ...p, mode: 'random' });
+            generateAll();
+        }
+
+        // Mode buttons
+        document.getElementById('pwdModeRandom')?.addEventListener('click', () => {
+            currentMode = 'random';
+            syncModeUI();
+            updateStrengthMeter(readOptionsFromUI());
+            persistOptions();
+        });
+        document.getElementById('pwdModePassphrase')?.addEventListener('click', () => {
+            currentMode = 'passphrase';
+            syncModeUI();
+            updateStrengthMeter(readOptionsFromUI());
+            persistOptions();
         });
 
-        // 复制全部按钮
+        document.querySelectorAll('[data-pwd-preset]').forEach((btn) => {
+            btn.addEventListener('click', () => applyPreset(btn.getAttribute('data-pwd-preset')));
+        });
+
+        document.getElementById('pwdGenerateBtn')?.addEventListener('click', generateAll);
+
         document.getElementById('pwdCopyAllBtn')?.addEventListener('click', () => {
-            if (generatedPasswords.length === 0) return;
-
-            const allPasswords = generatedPasswords.join('\n');
-            navigator.clipboard.writeText(allPasswords).then(() => {
-                const btn = document.getElementById('pwdCopyAllBtn');
-                const originalText = btn.textContent;
-                btn.textContent = '✅ 已复制全部!';
-                btn.style.background = '#10b981';
-                btn.style.color = '#fff';
-                setTimeout(() => {
-                    btn.textContent = originalText;
-                    btn.style.background = '';
-                    btn.style.color = '';
-                }, 1000);
-            });
+            if (generatedPasswords.length === 0) {
+                toast('还没有密码');
+                return;
+            }
+            navigator.clipboard.writeText(generatedPasswords.join('\n')).then(() => {
+                toast(`已复制 ${generatedPasswords.length} 条`);
+            }).catch(() => toast('复制失败'));
         });
+
+        document.getElementById('pwdSymbols')?.addEventListener('change', () => {
+            syncSymbolsBlock();
+        });
+
+        document.getElementById('pwdResetSymbolsBtn')?.addEventListener('click', () => {
+            const el = document.getElementById('pwdSymbolCharset');
+            if (el) el.value = DEFAULT_SYMBOL_CHARSET;
+            updateStrengthMeter(readOptionsFromUI());
+            persistOptions();
+            toast('已重置符号池');
+        });
+
+        const symbolInput = document.getElementById('pwdSymbolCharset');
+        symbolInput?.addEventListener('change', () => {
+            if (symbolInput) {
+                symbolInput.value = normalizeSymbolCharset(symbolInput.value);
+            }
+            updateStrengthMeter(readOptionsFromUI());
+            persistOptions();
+        });
+        symbolInput?.addEventListener('blur', () => {
+            if (symbolInput) {
+                symbolInput.value = normalizeSymbolCharset(symbolInput.value);
+            }
+            persistOptions();
+        });
+
+        // Live strength when options change
+        const optionIds = [
+            'pwdLength', 'pwdCount', 'pwdUppercase', 'pwdLowercase', 'pwdNumbers', 'pwdSymbols',
+            'pwdExcludeAmbiguous', 'pwdWordCount', 'pwdPhraseSeparator', 'pwdPhraseCapitalize', 'pwdPhraseNumber'
+        ];
+        optionIds.forEach((id) => {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.addEventListener('change', () => {
+                updateStrengthMeter(readOptionsFromUI());
+                persistOptions();
+            });
+            if (el.tagName === 'INPUT' && (el.type === 'number' || el.type === 'text')) {
+                el.addEventListener('input', () => updateStrengthMeter(readOptionsFromUI()));
+            }
+        });
+
+        // Restore persisted options
+        (async () => {
+            try {
+                if (typeof Settings !== 'undefined' && Settings.get) {
+                    const saved = await Settings.get('pwdOptions');
+                    if (saved && typeof saved === 'object') {
+                        applyOptionsToUI(saved);
+                    } else {
+                        syncModeUI();
+                        syncSymbolsBlock();
+                    }
+                } else {
+                    syncModeUI();
+                    syncSymbolsBlock();
+                }
+            } catch (_) {
+                syncModeUI();
+                syncSymbolsBlock();
+            }
+            updateStrengthMeter(readOptionsFromUI());
+        })();
     }
 
     // ==================== Regex Tester ====================
     function initRegex() {
-        document.getElementById('regexTestBtn')?.addEventListener('click', () => {
-            const pattern = document.getElementById('regexPattern')?.value;
-            const flags = document.getElementById('regexFlags')?.value || '';
-            const testStr = document.getElementById('regexTestStr')?.value || '';
-            const resultEl = document.getElementById('regexResult');
-            const countEl = document.getElementById('regexMatchCount');
-            if (!pattern || !resultEl) return;
+        const MAX_MATCHES = 500;
+        const PRESETS = {
+            digits: { pattern: '\\d+', flags: 'g', label: '数字' },
+            email: { pattern: '[\\w.+-]+@[\\w-]+\\.[\\w.-]+', flags: 'gi', label: '邮箱' },
+            url: { pattern: 'https?:\\/\\/[^\\s<>"\']+', flags: 'gi', label: 'URL' },
+            ipv4: { pattern: '(?:\\d{1,3}\\.){3}\\d{1,3}', flags: 'g', label: 'IPv4' },
+            hex: { pattern: '0x[0-9a-fA-F]+|\\b[0-9a-fA-F]{6,}\\b', flags: 'g', label: '十六进制' },
+            blank: { pattern: '^\\s*$', flags: 'gm', label: '空白行' }
+        };
 
-            try {
-                const regex = new RegExp(pattern, flags);
-                const matches = [];
-                let match;
+        let mode = 'match'; // match | replace
+        let lastMatches = [];
+        let lastReplaceText = '';
+        let lastCopyText = '';
+        let flashTimer = 0;
 
-                if (flags.includes('g')) {
-                    while ((match = regex.exec(testStr)) !== null) {
-                        matches.push(`匹配 ${matches.length + 1}: "${match[0]}"  位置: ${match.index}`
-                            + (match.length > 1 ? `  分组: [${match.slice(1).map(g => `"${g || ''}"`).join(', ')}]` : ''));
-                        if (match.index === regex.lastIndex) regex.lastIndex++;
-                    }
+        function toast(msg) {
+            if (DevKit.App && typeof DevKit.App.showToast === 'function') {
+                DevKit.App.showToast(msg);
+            }
+        }
+
+        function escapeHtml(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        function getFlags() {
+            return Array.from(document.querySelectorAll('.regex-flag-chip.is-on'))
+                .map((el) => el.getAttribute('data-flag'))
+                .filter(Boolean)
+                .join('');
+        }
+
+        function setFlags(flags) {
+            const set = new Set(String(flags || ''));
+            document.querySelectorAll('.regex-flag-chip').forEach((chip) => {
+                const on = set.has(chip.getAttribute('data-flag'));
+                chip.classList.toggle('is-on', on);
+                chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+            });
+            const readout = document.getElementById('regexFlagsReadout');
+            if (readout) readout.textContent = getFlags() || '';
+        }
+
+        function syncModeUI() {
+            document.getElementById('regexModeMatch')?.classList.toggle('active', mode === 'match');
+            document.getElementById('regexModeReplace')?.classList.toggle('active', mode === 'replace');
+            document.getElementById('regexReplaceRow')?.classList.toggle('hidden', mode !== 'replace');
+            const title = document.getElementById('regexResultTitle');
+            if (title) title.textContent = mode === 'replace' ? '替换预览' : '匹配结果';
+            const list = document.getElementById('regexMatchList');
+            const preview = document.getElementById('regexReplacePreview');
+            if (mode === 'replace') {
+                list?.classList.add('hidden');
+                preview?.classList.remove('hidden');
+            } else {
+                list?.classList.remove('hidden');
+                preview?.classList.add('hidden');
+            }
+            const run = document.getElementById('regexRunBtn');
+            if (run) run.textContent = mode === 'replace' ? '替换' : '测试';
+        }
+
+        function setError(msg) {
+            const err = document.getElementById('regexError');
+            const row = document.querySelector('.regex-pattern-row');
+            if (err) {
+                if (msg) {
+                    err.textContent = msg;
+                    err.classList.remove('hidden');
                 } else {
-                    match = regex.exec(testStr);
-                    if (match) {
-                        matches.push(`匹配: "${match[0]}"  位置: ${match.index}`
-                            + (match.length > 1 ? `  分组: [${match.slice(1).map(g => `"${g || ''}"`).join(', ')}]` : ''));
+                    err.textContent = '';
+                    err.classList.add('hidden');
+                }
+            }
+            row?.classList.toggle('is-error', !!msg);
+        }
+
+        function collectMatches(regex, text) {
+            const matches = [];
+            let truncated = false;
+            let match;
+            if (regex.global) {
+                while ((match = regex.exec(text)) !== null) {
+                    matches.push({
+                        index: match.index,
+                        end: match.index + match[0].length,
+                        text: match[0],
+                        groups: match.slice(1)
+                    });
+                    if (match.index === regex.lastIndex) regex.lastIndex++;
+                    if (matches.length >= MAX_MATCHES) {
+                        truncated = true;
+                        break;
                     }
                 }
-
-                if (countEl) countEl.value = `${matches.length} 个匹配`;
-                resultEl.value = matches.length ? matches.join('\n') : '无匹配';
-            } catch (e) {
-                if (countEl) countEl.value = '错误';
-                resultEl.value = '正则表达式错误: ' + e.message;
+            } else {
+                match = regex.exec(text);
+                if (match) {
+                    matches.push({
+                        index: match.index,
+                        end: match.index + match[0].length,
+                        text: match[0],
+                        groups: match.slice(1)
+                    });
+                }
             }
-        });
+            return { matches, truncated };
+        }
 
-        document.getElementById('regexReplaceBtn')?.addEventListener('click', () => {
-            const pattern = document.getElementById('regexPattern')?.value;
-            const flags = document.getElementById('regexFlags')?.value || '';
-            const testStr = document.getElementById('regexTestStr')?.value || '';
-            const replaceStr = document.getElementById('regexReplaceStr')?.value || '';
-            const resultEl = document.getElementById('regexResult');
+        function buildHighlightHtml(text, matches) {
+            if (!text) return '';
+            if (!matches.length) return escapeHtml(text);
+            let html = '';
+            let cursor = 0;
+            matches.forEach((m, i) => {
+                if (m.index > cursor) html += escapeHtml(text.slice(cursor, m.index));
+                const cls = `regex-hl regex-hl-${i % 2}${m._flash ? ' is-flash' : ''}`;
+                html += `<mark class="${cls}" data-match-i="${i}">${escapeHtml(m.text)}</mark>`;
+                cursor = m.end;
+            });
+            if (cursor < text.length) html += escapeHtml(text.slice(cursor));
+            return html;
+        }
+
+        function renderMatchList(matches, truncated) {
+            const list = document.getElementById('regexMatchList');
+            if (!list) return;
+            if (!matches.length) {
+                list.innerHTML = '<div class="regex-placeholder">无匹配</div>';
+                return;
+            }
+            list.innerHTML = matches.map((m, i) => {
+                const groups = (m.groups || []).length
+                    ? `<ul class="regex-match-groups">${m.groups.map((g, gi) =>
+                        `<li>$${gi + 1}: ${g == null ? '<空>' : escapeHtml(String(g))}</li>`
+                    ).join('')}</ul>`
+                    : '';
+                return `<div class="regex-match-row" data-match-i="${i}" role="button" tabindex="0">
+                    <div class="regex-match-top">
+                        <span class="regex-match-idx">#${i + 1}</span>
+                        <span class="regex-match-range">[${m.index}, ${m.end})</span>
+                    </div>
+                    <div class="regex-match-text">${escapeHtml(m.text)}</div>
+                    ${groups}
+                </div>`;
+            }).join('') + (truncated
+                ? '<div class="regex-placeholder">已截断：最多显示 500 条匹配</div>'
+                : '');
+
+            list.querySelectorAll('.regex-match-row').forEach((row) => {
+                const activate = () => {
+                    const i = Number(row.getAttribute('data-match-i'));
+                    flashMatch(i);
+                };
+                row.addEventListener('click', activate);
+                row.addEventListener('keydown', (e) => {
+                    if (e.key === 'Enter' || e.key === ' ') {
+                        e.preventDefault();
+                        activate();
+                    }
+                });
+            });
+        }
+
+        function flashMatch(index) {
+            const list = document.getElementById('regexMatchList');
+            list?.querySelectorAll('.regex-match-row').forEach((row) => {
+                row.classList.toggle('is-active', Number(row.getAttribute('data-match-i')) === index);
+            });
+            lastMatches.forEach((m, i) => { m._flash = i === index; });
+            const text = document.getElementById('regexTestStr')?.value || '';
+            const hl = document.getElementById('regexHighlight');
+            if (hl) hl.innerHTML = buildHighlightHtml(text, lastMatches) + '\n';
+            const mark = hl?.querySelector(`mark[data-match-i="${index}"]`);
+            mark?.scrollIntoView({ block: 'nearest', behavior: 'smooth' });
+            if (flashTimer) clearTimeout(flashTimer);
+            flashTimer = setTimeout(() => {
+                lastMatches.forEach((m) => { m._flash = false; });
+                if (hl) hl.innerHTML = buildHighlightHtml(text, lastMatches) + '\n';
+            }, 900);
+        }
+
+        function syncScroll() {
+            const input = document.getElementById('regexTestStr');
+            const hl = document.getElementById('regexHighlight');
+            if (!input || !hl) return;
+            hl.scrollTop = input.scrollTop;
+            hl.scrollLeft = input.scrollLeft;
+        }
+
+        function run() {
+            const pattern = document.getElementById('regexPattern')?.value ?? '';
+            const text = document.getElementById('regexTestStr')?.value ?? '';
+            const flags = getFlags();
             const countEl = document.getElementById('regexMatchCount');
-            if (!pattern || !resultEl) return;
+            const hl = document.getElementById('regexHighlight');
+            const readout = document.getElementById('regexFlagsReadout');
+            if (readout) readout.textContent = flags || '';
 
+            lastMatches = [];
+            lastReplaceText = '';
+            lastCopyText = '';
+
+            if (!pattern) {
+                setError('');
+                if (hl) hl.innerHTML = escapeHtml(text) + (text ? '\n' : '');
+                if (countEl) countEl.textContent = '0 个匹配';
+                const list = document.getElementById('regexMatchList');
+                if (list && mode === 'match') {
+                    list.innerHTML = '<div class="regex-placeholder">输入表达式后自动匹配</div>';
+                }
+                const preview = document.getElementById('regexReplacePreview');
+                if (preview && mode === 'replace') preview.value = '';
+                return;
+            }
+
+            let regex;
             try {
-                const regex = new RegExp(pattern, flags);
-                const result = testStr.replace(regex, replaceStr);
-                if (countEl) countEl.value = '已替换';
-                resultEl.value = result;
+                regex = new RegExp(pattern, flags);
+                setError('');
             } catch (e) {
-                if (countEl) countEl.value = '错误';
-                resultEl.value = '正则表达式错误: ' + e.message;
-            }
-        });
-    }
-
-    // ==================== JSON Diff ====================
-    function initJsonDiff() {
-        document.getElementById('jsonDiffBtn')?.addEventListener('click', () => {
-            const aStr = document.getElementById('jsonDiffA')?.value || '';
-            const bStr = document.getElementById('jsonDiffB')?.value || '';
-            const resultEl = document.getElementById('jsonDiffResult');
-            if (!resultEl) return;
-
-            if (typeof jsonDiffEngine === 'undefined') {
-                resultEl.innerHTML = '<span class="diff-removed">JSON Diff 引擎未加载</span>';
+                setError('正则表达式错误: ' + (e.message || '无效'));
+                if (countEl) countEl.textContent = '错误';
+                if (hl) hl.innerHTML = escapeHtml(text) + (text ? '\n' : '');
+                const list = document.getElementById('regexMatchList');
+                if (list && mode === 'match') {
+                    list.innerHTML = '<div class="regex-placeholder">表达式无效</div>';
+                }
                 return;
             }
 
-            const result = jsonDiffEngine.diffFromText(aStr, bStr, { sortKeys: true });
-            if (!result.ok) {
-                resultEl.innerHTML = `<span class="diff-removed">${escapeHtmlStr(result.error)}</span>`;
+            if (mode === 'replace') {
+                const replaceStr = document.getElementById('regexReplaceStr')?.value ?? '';
+                // Highlight uses same flags; without g only first match is replaced/highlighted.
+                const { matches, truncated } = collectMatches(new RegExp(pattern, flags), text);
+                lastMatches = matches;
+                const replaced = text.replace(regex, replaceStr);
+                lastReplaceText = replaced;
+                lastCopyText = replaced;
+                const preview = document.getElementById('regexReplacePreview');
+                if (preview) preview.value = replaced;
+                if (hl) hl.innerHTML = buildHighlightHtml(text, matches) + (text ? '\n' : '');
+                if (countEl) {
+                    countEl.textContent = truncated
+                        ? `替换约 ${matches.length}+ 处（已截断统计）`
+                        : `替换 ${matches.length} 处`;
+                }
+                syncScroll();
                 return;
             }
 
-            resultEl.innerHTML = result.lines.length
-                ? result.lines.join('\n')
-                : '<span class="diff-unchanged">两个 JSON 完全相同</span>';
-        });
-
-        document.getElementById('jsonDiffSwapBtn')?.addEventListener('click', () => {
-            const aEl = document.getElementById('jsonDiffA');
-            const bEl = document.getElementById('jsonDiffB');
-            if (aEl && bEl) {
-                const tmp = aEl.value;
-                aEl.value = bEl.value;
-                bEl.value = tmp;
+            const { matches, truncated } = collectMatches(regex, text);
+            lastMatches = matches;
+            lastCopyText = matches.map((m, i) =>
+                `#${i + 1} [${m.index},${m.end}) ${m.text}`
+                + (m.groups.length ? ` groups=[${m.groups.map((g) => JSON.stringify(g ?? null)).join(', ')}]` : '')
+            ).join('\n');
+            if (hl) hl.innerHTML = buildHighlightHtml(text, matches) + (text ? '\n' : '');
+            renderMatchList(matches, truncated);
+            if (countEl) {
+                countEl.textContent = truncated
+                    ? `${matches.length}+ 个匹配（已截断）`
+                    : `${matches.length} 个匹配`;
             }
+            syncScroll();
+        }
+
+        const debouncedRun = debounce(() => run(), 120);
+
+        async function persist() {
+            if (typeof Settings === 'undefined' || !Settings.set) return;
+            await Settings.set('regexOptions', {
+                mode,
+                flags: getFlags(),
+                pattern: document.getElementById('regexPattern')?.value || '',
+                replace: document.getElementById('regexReplaceStr')?.value || ''
+            });
+        }
+        const debouncedPersist = debounce(() => { persist(); }, 400);
+
+        document.querySelectorAll('[data-regex-mode]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                mode = btn.getAttribute('data-regex-mode') === 'replace' ? 'replace' : 'match';
+                syncModeUI();
+                run();
+                debouncedPersist();
+            });
         });
 
-        document.getElementById('jsonDiffOpenToolBtn')?.addEventListener('click', async () => {
-            const aStr = document.getElementById('jsonDiffA')?.value || '';
-            const bStr = document.getElementById('jsonDiffB')?.value || '';
-            if (DevKit.App && DevKit.JsonController) {
-                await DevKit.App.switchMode('json');
-                editorManager.setValue('jsonCompareA', aStr);
-                editorManager.setValue('jsonCompareB', bStr);
-                DevKit.JsonController.switchSubView('compare');
-                DevKit.JsonController.handleCompare();
+        document.querySelectorAll('.regex-flag-chip').forEach((chip) => {
+            chip.addEventListener('click', () => {
+                chip.classList.toggle('is-on');
+                chip.setAttribute('aria-pressed', chip.classList.contains('is-on') ? 'true' : 'false');
+                const readout = document.getElementById('regexFlagsReadout');
+                if (readout) readout.textContent = getFlags() || '';
+                run();
+                debouncedPersist();
+            });
+        });
+
+        document.querySelectorAll('[data-regex-preset]').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const key = btn.getAttribute('data-regex-preset');
+                const preset = PRESETS[key];
+                if (!preset) return;
+                const input = document.getElementById('regexPattern');
+                if (input) input.value = preset.pattern;
+                setFlags(preset.flags);
+                document.querySelectorAll('.regex-preset-chip').forEach((c) => {
+                    c.classList.toggle('is-active', c === btn);
+                });
+                run();
+                debouncedPersist();
+            });
+        });
+
+        document.getElementById('regexPattern')?.addEventListener('input', () => {
+            document.querySelectorAll('.regex-preset-chip').forEach((c) => c.classList.remove('is-active'));
+            debouncedRun();
+            debouncedPersist();
+        });
+        document.getElementById('regexReplaceStr')?.addEventListener('input', () => {
+            debouncedRun();
+            debouncedPersist();
+        });
+        document.getElementById('regexTestStr')?.addEventListener('input', () => {
+            debouncedRun();
+        });
+        document.getElementById('regexTestStr')?.addEventListener('scroll', syncScroll);
+        document.getElementById('regexRunBtn')?.addEventListener('click', () => run());
+        document.getElementById('regexCopyBtn')?.addEventListener('click', () => {
+            if (!lastCopyText) {
+                toast(mode === 'replace' ? '没有可复制的替换结果' : '没有可复制的匹配');
+                return;
             }
+            navigator.clipboard.writeText(lastCopyText)
+                .then(() => toast('已复制'))
+                .catch(() => toast('复制失败'));
         });
-    }
+        document.getElementById('regexClearBtn')?.addEventListener('click', () => {
+            const pattern = document.getElementById('regexPattern');
+            const test = document.getElementById('regexTestStr');
+            const replace = document.getElementById('regexReplaceStr');
+            if (pattern) pattern.value = '';
+            if (test) test.value = '';
+            if (replace) replace.value = '';
+            document.querySelectorAll('.regex-preset-chip').forEach((c) => c.classList.remove('is-active'));
+            setError('');
+            run();
+            debouncedPersist();
+        });
 
-    function escapeHtmlStr(s) {
-        const d = document.createElement('div');
-        d.textContent = s;
-        return d.innerHTML;
+        (async () => {
+            try {
+                if (typeof Settings !== 'undefined' && Settings.get) {
+                    const saved = await Settings.get('regexOptions');
+                    if (saved && typeof saved === 'object') {
+                        mode = saved.mode === 'replace' ? 'replace' : 'match';
+                        if (typeof saved.flags === 'string') setFlags(saved.flags);
+                        else setFlags('g');
+                        if (document.getElementById('regexPattern') && typeof saved.pattern === 'string') {
+                            document.getElementById('regexPattern').value = saved.pattern;
+                        }
+                        if (document.getElementById('regexReplaceStr') && typeof saved.replace === 'string') {
+                            document.getElementById('regexReplaceStr').value = saved.replace;
+                        }
+                    } else {
+                        setFlags('g');
+                    }
+                } else {
+                    setFlags('g');
+                }
+            } catch (_) {
+                setFlags('g');
+            }
+            syncModeUI();
+            run();
+        })();
     }
 
     // ==================== Color Converter ====================
     function initColor() {
-        const colorInput = document.getElementById('colorInput');
-        const colorPicker = document.getElementById('colorPicker');
+        const C = typeof ColorUtil !== 'undefined' ? ColorUtil : (DevKit && DevKit.Color);
+        if (!C) return;
 
-        document.getElementById('colorConvertBtn')?.addEventListener('click', () => {
-            convertColor(colorInput?.value || '');
-        });
+        const HISTORY_MAX = 16;
+        let current = C.parse('#3B82F6') || C.rgba(59, 130, 246, 1);
+        let history = [];
+        let skipHistory = false;
+        let imageObjectUrl = '';
 
-        colorPicker?.addEventListener('input', () => {
-            if (colorInput) colorInput.value = colorPicker.value;
-            convertColor(colorPicker.value);
-        });
+        const inputEl = document.getElementById('colorInput');
+        const pickerEl = document.getElementById('colorPicker');
+        const hintEl = document.getElementById('colorParseHint');
+        const previewEl = document.getElementById('colorPreview');
+        const previewLabel = document.getElementById('colorPreviewLabel');
+        const chipUpper = document.getElementById('colorOptUppercase');
+        const chipModern = document.getElementById('colorOptModern');
+        const eyeBtn = document.getElementById('colorEyeDropperBtn');
+        const imageBtn = document.getElementById('colorImagePickBtn');
+        const imageFile = document.getElementById('colorImageFile');
+        const imageArea = document.getElementById('colorImagePickArea');
+        const imageCanvas = document.getElementById('colorImageCanvas');
+        const imageClose = document.getElementById('colorImagePickClose');
+        const clearHistoryBtn = document.getElementById('colorClearHistoryBtn');
+        const contrastBgInput = document.getElementById('colorContrastBg');
 
-        colorInput?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') convertColor(colorInput.value);
-        });
-    }
-
-    function convertColor(input) {
-        input = input.trim();
-        const preview = document.getElementById('colorPreview');
-        const hexEl = document.getElementById('colorHex');
-        const rgbEl = document.getElementById('colorRgb');
-        const hslEl = document.getElementById('colorHsl');
-        const picker = document.getElementById('colorPicker');
-        if (!hexEl || !rgbEl || !hslEl) return;
-
-        let r, g, b;
-
-        // Parse HEX
-        let m = input.match(/^#?([0-9a-f]{3,8})$/i);
-        if (m) {
-            let hex = m[1];
-            if (hex.length === 3) hex = hex[0]+hex[0]+hex[1]+hex[1]+hex[2]+hex[2];
-            if (hex.length >= 6) {
-                r = parseInt(hex.substring(0,2), 16);
-                g = parseInt(hex.substring(2,4), 16);
-                b = parseInt(hex.substring(4,6), 16);
+        function toast(msg) {
+            if (DevKit.App && typeof DevKit.App.showToast === 'function') {
+                DevKit.App.showToast(msg);
             }
         }
 
-        // Parse rgb(r, g, b)
-        if (r === undefined) {
-            m = input.match(/rgba?\(\s*(\d+)\s*,\s*(\d+)\s*,\s*(\d+)/i);
-            if (m) { r = +m[1]; g = +m[2]; b = +m[3]; }
+        function chipOn(el) {
+            return !!el?.classList.contains('is-on');
         }
 
-        // Parse hsl(h, s%, l%)
-        if (r === undefined) {
-            m = input.match(/hsla?\(\s*([\d.]+)\s*,\s*([\d.]+)%\s*,\s*([\d.]+)%/i);
-            if (m) {
-                const rgb = hslToRgb(+m[1], +m[2], +m[3]);
-                r = rgb[0]; g = rgb[1]; b = rgb[2];
-            }
+        function setChip(el, on) {
+            if (!el) return;
+            el.classList.toggle('is-on', !!on);
+            el.setAttribute('aria-pressed', on ? 'true' : 'false');
         }
 
-        if (r === undefined) {
-            hexEl.value = '无法解析';
-            rgbEl.value = '';
-            hslEl.value = '';
-            return;
-        }
-
-        r = Math.max(0, Math.min(255, r));
-        g = Math.max(0, Math.min(255, g));
-        b = Math.max(0, Math.min(255, b));
-
-        const hex = '#' + [r,g,b].map(v => v.toString(16).padStart(2,'0')).join('');
-        const hsl = rgbToHsl(r, g, b);
-
-        hexEl.value = hex.toUpperCase();
-        rgbEl.value = `rgb(${r}, ${g}, ${b})`;
-        hslEl.value = `hsl(${hsl[0]}, ${hsl[1]}%, ${hsl[2]}%)`;
-        if (preview) preview.style.background = hex;
-        if (picker) picker.value = hex;
-    }
-
-    function rgbToHsl(r, g, b) {
-        r /= 255; g /= 255; b /= 255;
-        const max = Math.max(r,g,b), min = Math.min(r,g,b);
-        let h, s, l = (max+min)/2;
-        if (max === min) { h = s = 0; }
-        else {
-            const d = max - min;
-            s = l > 0.5 ? d/(2-max-min) : d/(max+min);
-            switch(max) {
-                case r: h = ((g-b)/d + (g<b?6:0))/6; break;
-                case g: h = ((b-r)/d + 2)/6; break;
-                case b: h = ((r-g)/d + 4)/6; break;
-            }
-        }
-        return [Math.round(h*360), Math.round(s*100), Math.round(l*100)];
-    }
-
-    function hslToRgb(h, s, l) {
-        h /= 360; s /= 100; l /= 100;
-        let r, g, b;
-        if (s === 0) { r = g = b = l; }
-        else {
-            const hue2rgb = (p, q, t) => {
-                if (t < 0) t += 1; if (t > 1) t -= 1;
-                if (t < 1/6) return p + (q-p)*6*t;
-                if (t < 1/2) return q;
-                if (t < 2/3) return p + (q-p)*(2/3-t)*6;
-                return p;
+        function formatOpts() {
+            return {
+                uppercase: chipOn(chipUpper),
+                modernSyntax: chipOn(chipModern)
             };
-            const q = l < 0.5 ? l*(1+s) : l+s-l*s;
-            const p = 2*l - q;
-            r = hue2rgb(p, q, h+1/3);
-            g = hue2rgb(p, q, h);
-            b = hue2rgb(p, q, h-1/3);
         }
-        return [Math.round(r*255), Math.round(g*255), Math.round(b*255)];
+
+        async function persistOptions() {
+            if (typeof Settings === 'undefined' || !Settings.set) return;
+            await Settings.set('colorOptions', formatOpts());
+        }
+        const debouncedPersistOptions = debounce(() => { persistOptions(); }, 300);
+
+        async function persistHistory() {
+            if (typeof Settings === 'undefined' || !Settings.set) return;
+            await Settings.set('colorHistory', history.slice(0, HISTORY_MAX));
+        }
+        const debouncedPersistHistory = debounce(() => { persistHistory(); }, 400);
+
+        function pushHistory(color) {
+            if (skipHistory) return;
+            const key = C.toHex(color, color.a < 0.999, true);
+            history = [key, ...history.filter((h) => h.toUpperCase() !== key.toUpperCase())].slice(0, HISTORY_MAX);
+            renderHistory();
+            debouncedPersistHistory();
+        }
+
+        function renderHistory() {
+            const host = document.getElementById('colorHistory');
+            if (!host) return;
+            if (!history.length) {
+                host.innerHTML = '<span class="color-history-empty">暂无记录</span>';
+                return;
+            }
+            host.innerHTML = history.map((hex) => {
+                const c = C.parse(hex);
+                const css = c ? C.cssBackground(c) : hex;
+                return `<button type="button" class="color-swatch" role="listitem" data-color="${hex.replace(/"/g, '')}" style="--swatch:${css}" title="${hex}" aria-label="${hex}"></button>`;
+            }).join('');
+        }
+
+        function renderSwatchRow(hostId, colors, currentKey) {
+            const host = document.getElementById(hostId);
+            if (!host) return;
+            host.innerHTML = colors.map((c) => {
+                const hex = C.toHex(c, c.a < 0.999, true);
+                const css = C.cssBackground(c);
+                const cur = hex.toUpperCase() === currentKey ? ' is-current' : '';
+                return `<button type="button" class="color-swatch${cur}" role="listitem" data-color="${hex}" style="--swatch:${css}" title="${hex}" aria-label="${hex}"></button>`;
+            }).join('');
+        }
+
+        function badgeHtml(report) {
+            const items = [
+                ['AA', report.aaNormal],
+                ['AA大', report.aaLarge],
+                ['AAA', report.aaaNormal],
+                ['AAA大', report.aaaLarge]
+            ];
+            return items.map(([label, ok]) => (
+                `<span class="color-badge ${ok ? 'pass' : 'fail'}">${label}</span>`
+            )).join('');
+        }
+
+        function fillContrast(el, fg, bg) {
+            if (!el) return;
+            const report = C.contrastReport(fg, bg);
+            const ratioEl = el.querySelector('[data-role="ratio"]');
+            const badgesEl = el.querySelector('[data-role="badges"]');
+            if (ratioEl) ratioEl.textContent = `${report.ratio}:1`;
+            if (badgesEl) badgesEl.innerHTML = badgeHtml(report);
+        }
+
+        function updateContrast(color) {
+            fillContrast(document.getElementById('colorContrastWhite'), color, C.WHITE);
+            fillContrast(document.getElementById('colorContrastBlack'), color, C.BLACK);
+            const customBg = C.parse(contrastBgInput?.value || '') || C.parse('#F8FAFC') || C.WHITE;
+            const swatch = document.getElementById('colorContrastCustomSwatch');
+            if (swatch) {
+                swatch.style.background = C.cssBackground(customBg);
+                // Pick readable label color against custom bg
+                const onWhite = C.contrastRatio(C.BLACK, customBg) >= C.contrastRatio(C.WHITE, customBg);
+                swatch.style.color = onWhite ? '#111' : '#fff';
+            }
+            fillContrast(document.getElementById('colorContrastCustom'), color, customBg);
+        }
+
+        function applyColor(color, options = {}) {
+            if (!color) return;
+            current = color;
+            const opts = formatOpts();
+            const fmt = C.format(color, opts);
+            const syncInput = options.syncInput !== false;
+
+            const hexEl = document.getElementById('colorHex');
+            const hex8El = document.getElementById('colorHex8');
+            const rgbEl = document.getElementById('colorRgb');
+            const hslEl = document.getElementById('colorHsl');
+            const hwbEl = document.getElementById('colorHwb');
+            const oklchEl = document.getElementById('colorOklch');
+
+            if (hexEl) hexEl.value = fmt.hex;
+            if (hex8El) hex8El.value = fmt.hex8;
+            if (rgbEl) rgbEl.value = fmt.rgb;
+            if (hslEl) hslEl.value = fmt.hsl;
+            if (hwbEl) hwbEl.value = fmt.hwb;
+            if (oklchEl) oklchEl.value = fmt.oklch;
+
+            if (previewEl) previewEl.style.setProperty('--swatch', C.cssBackground(color));
+            if (previewLabel) previewLabel.textContent = fmt.hex8;
+            if (pickerEl) pickerEl.value = C.pickerHex(color);
+            if (syncInput && inputEl && document.activeElement !== inputEl) {
+                inputEl.value = fmt.hex8;
+            } else if (syncInput && inputEl && options.forceInput) {
+                inputEl.value = fmt.hex8;
+            }
+            if (hintEl) hintEl.textContent = '';
+
+            const curKey = fmt.hex8.toUpperCase();
+            renderSwatchRow('colorRamp', C.tintShadeRamp(color, 9), curKey);
+            const har = C.harmonies(color);
+            renderSwatchRow('colorHarmonyComp', har.complementary, curKey);
+            renderSwatchRow('colorHarmonyAnalog', har.analogous, curKey);
+            renderSwatchRow('colorHarmonyTriad', har.triadic, curKey);
+            updateContrast(color);
+
+            if (options.recordHistory !== false) pushHistory(color);
+        }
+
+        function applyFromText(text, recordHistory) {
+            const parsed = C.parse(text);
+            if (!parsed) {
+                if (hintEl) hintEl.textContent = text.trim() ? '无法解析该颜色' : '';
+                return false;
+            }
+            applyColor(parsed, {
+                syncInput: false,
+                recordHistory: recordHistory !== false
+            });
+            return true;
+        }
+
+        const debouncedInput = debounce(() => {
+            applyFromText(inputEl?.value || '', true);
+        }, 120);
+
+        inputEl?.addEventListener('input', debouncedInput);
+        inputEl?.addEventListener('keydown', (e) => {
+            if (e.key === 'Enter') applyFromText(inputEl.value, true);
+        });
+
+        pickerEl?.addEventListener('input', () => {
+            const parsed = C.parse(pickerEl.value);
+            if (!parsed) return;
+            // Preserve alpha from current color when using opaque native picker
+            parsed.a = current.a;
+            applyColor(parsed, { forceInput: true });
+        });
+
+        previewEl?.addEventListener('click', () => {
+            const v = document.getElementById('colorHex8')?.value || '';
+            if (!v) return;
+            navigator.clipboard.writeText(v).then(() => toast('已复制 HEX8')).catch(() => toast('复制失败'));
+        });
+
+        document.querySelectorAll('#toolPanelColor .color-copy-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const id = btn.getAttribute('data-copy');
+                const el = id ? document.getElementById(id) : null;
+                const v = el?.value || '';
+                if (!v) { toast('无可复制内容'); return; }
+                navigator.clipboard.writeText(v).then(() => toast('已复制')).catch(() => toast('复制失败'));
+            });
+        });
+
+        function onSwatchClick(e) {
+            const btn = e.target.closest('.color-swatch');
+            if (!btn) return;
+            const hex = btn.getAttribute('data-color');
+            const parsed = C.parse(hex || '');
+            if (!parsed) return;
+            applyColor(parsed, { forceInput: true });
+        }
+
+        ['colorRamp', 'colorHarmonyComp', 'colorHarmonyAnalog', 'colorHarmonyTriad', 'colorHistory'].forEach((id) => {
+            document.getElementById(id)?.addEventListener('click', onSwatchClick);
+        });
+
+        chipUpper?.addEventListener('click', () => {
+            setChip(chipUpper, !chipOn(chipUpper));
+            applyColor(current, { syncInput: false, recordHistory: false });
+            debouncedPersistOptions();
+        });
+        chipModern?.addEventListener('click', () => {
+            setChip(chipModern, !chipOn(chipModern));
+            applyColor(current, { syncInput: false, recordHistory: false });
+            debouncedPersistOptions();
+        });
+
+        contrastBgInput?.addEventListener('input', debounce(() => {
+            updateContrast(current);
+        }, 120));
+
+        // EyeDropper (Chrome)
+        if (!window.EyeDropper) {
+            eyeBtn?.classList.add('hidden');
+        } else {
+            eyeBtn?.addEventListener('click', async () => {
+                try {
+                    const dropper = new window.EyeDropper();
+                    const result = await dropper.open();
+                    const parsed = C.parse(result.sRGBHex);
+                    if (parsed) applyColor(parsed, { forceInput: true });
+                } catch (err) {
+                    if (err && err.name !== 'AbortError') toast('取色失败');
+                }
+            });
+        }
+
+        function closeImagePick() {
+            imageArea?.classList.add('hidden');
+            if (imageObjectUrl) {
+                URL.revokeObjectURL(imageObjectUrl);
+                imageObjectUrl = '';
+            }
+            if (imageFile) imageFile.value = '';
+        }
+
+        imageBtn?.addEventListener('click', () => imageFile?.click());
+        imageClose?.addEventListener('click', closeImagePick);
+
+        imageFile?.addEventListener('change', async () => {
+            const file = imageFile.files && imageFile.files[0];
+            if (!file || !imageCanvas) return;
+            if (imageObjectUrl) URL.revokeObjectURL(imageObjectUrl);
+            imageObjectUrl = URL.createObjectURL(file);
+            try {
+                const bmp = await createImageBitmap(file);
+                const maxW = 640;
+                const scale = Math.min(1, maxW / bmp.width);
+                const w = Math.max(1, Math.round(bmp.width * scale));
+                const h = Math.max(1, Math.round(bmp.height * scale));
+                imageCanvas.width = w;
+                imageCanvas.height = h;
+                const ctx = imageCanvas.getContext('2d', { willReadFrequently: true });
+                ctx.clearRect(0, 0, w, h);
+                ctx.drawImage(bmp, 0, 0, w, h);
+                bmp.close?.();
+                imageArea?.classList.remove('hidden');
+            } catch (_) {
+                toast('无法读取图片');
+                closeImagePick();
+            }
+        });
+
+        imageCanvas?.addEventListener('click', (e) => {
+            const rect = imageCanvas.getBoundingClientRect();
+            const x = Math.floor((e.clientX - rect.left) * (imageCanvas.width / rect.width));
+            const y = Math.floor((e.clientY - rect.top) * (imageCanvas.height / rect.height));
+            const ctx = imageCanvas.getContext('2d', { willReadFrequently: true });
+            if (!ctx) return;
+            const data = ctx.getImageData(clamp(x, 0, imageCanvas.width - 1), clamp(y, 0, imageCanvas.height - 1), 1, 1).data;
+            applyColor(C.rgba(data[0], data[1], data[2], data[3] / 255), { forceInput: true });
+        });
+
+        function clamp(n, min, max) {
+            return Math.min(max, Math.max(min, n));
+        }
+
+        clearHistoryBtn?.addEventListener('click', () => {
+            history = [];
+            renderHistory();
+            persistHistory();
+            toast('已清空历史');
+        });
+
+        (async () => {
+            skipHistory = true;
+            try {
+                if (typeof Settings !== 'undefined' && Settings.get) {
+                    const opts = await Settings.get('colorOptions');
+                    if (opts && typeof opts === 'object') {
+                        setChip(chipUpper, opts.uppercase !== false);
+                        setChip(chipModern, !!opts.modernSyntax);
+                    }
+                    const saved = await Settings.get('colorHistory');
+                    if (Array.isArray(saved)) {
+                        history = saved.filter((x) => typeof x === 'string').slice(0, HISTORY_MAX);
+                    }
+                }
+            } catch (_) { /* ignore */ }
+            renderHistory();
+            applyColor(current, { forceInput: true, recordHistory: false });
+            skipHistory = false;
+        })();
     }
 
     // ==================== Cron Expression Parser ====================
     function initCron() {
-        document.getElementById('cronParseBtn')?.addEventListener('click', () => {
-            parseCron(document.getElementById('cronInput')?.value || '');
+        let currentMode = 'expr';
+        let lastRunsText = '';
+        let syncingFromBuilder = false;
+        let lastParsed = null;
+        let parseRaf = 0;
+        let parseToken = 0;
+
+        const FIELD_META_5 = [
+            { key: 'minute', label: '分', min: 0, max: 59 },
+            { key: 'hour', label: '时', min: 0, max: 23 },
+            { key: 'dom', label: '日', min: 1, max: 31 },
+            { key: 'month', label: '月', min: 1, max: 12 },
+            { key: 'dow', label: '周', min: 0, max: 7 }
+        ];
+        const FIELD_META_6 = [
+            { key: 'second', label: '秒', min: 0, max: 59 },
+            ...FIELD_META_5
+        ];
+
+        function toast(msg) {
+            if (DevKit.App && typeof DevKit.App.showToast === 'function') {
+                DevKit.App.showToast(msg);
+            }
+        }
+
+        function withSeconds() {
+            return !!document.getElementById('cronWithSeconds')?.checked;
+        }
+
+        function nextCount() {
+            const v = parseInt(document.getElementById('cronNextCount')?.value, 10);
+            return [5, 10, 20].includes(v) ? v : 10;
+        }
+
+        function getExpr() {
+            return (document.getElementById('cronInput')?.value || '').trim();
+        }
+
+        function setExpr(expr, { fromBuilder = false } = {}) {
+            const input = document.getElementById('cronInput');
+            if (!input) return;
+            if (fromBuilder) syncingFromBuilder = true;
+            input.value = expr;
+            if (fromBuilder) {
+                setTimeout(() => { syncingFromBuilder = false; }, 0);
+            }
+        }
+
+        function escapeCronText(text) {
+            return String(text)
+                .replace(/&/g, '&amp;')
+                .replace(/</g, '&lt;')
+                .replace(/>/g, '&gt;')
+                .replace(/"/g, '&quot;');
+        }
+
+        // Paint checkbox/select first, then run parse on next frame.
+        function scheduleParse(expr) {
+            const target = expr != null ? expr : getExpr();
+            const token = ++parseToken;
+            if (parseRaf) cancelAnimationFrame(parseRaf);
+            parseRaf = requestAnimationFrame(() => {
+                parseRaf = 0;
+                if (token !== parseToken) return;
+                parseCron(target);
+            });
+        }
+
+        function syncModeUI() {
+            document.getElementById('cronModeExpr')?.classList.toggle('active', currentMode === 'expr');
+            document.getElementById('cronModeBuilder')?.classList.toggle('active', currentMode === 'builder');
+            document.getElementById('cronExprPanel')?.classList.toggle('hidden', currentMode !== 'expr');
+            document.getElementById('cronBuilderPanel')?.classList.toggle('hidden', currentMode !== 'builder');
+        }
+
+        function updateTzNote() {
+            const el = document.getElementById('cronTzNote');
+            if (!el) return;
+            let name = '本地时间';
+            try {
+                name = Intl.DateTimeFormat().resolvedOptions().timeZone || name;
+            } catch (_) { /* ignore */ }
+            el.textContent = `时区：${name}`;
+        }
+
+        function validateFieldToken(token, meta) {
+            if (!token) return false;
+            if (token === '*' || token === '?') return true;
+            const parts = token.split(',');
+            return parts.every((part) => {
+                const p = part.trim();
+                if (!p) return false;
+                let range = p;
+                let step = null;
+                if (p.includes('/')) {
+                    const [left, right] = p.split('/');
+                    range = left;
+                    step = Number(right);
+                    if (!Number.isFinite(step) || step <= 0) return false;
+                }
+                if (range === '*') return true;
+                if (range.includes('-')) {
+                    const [lo, hi] = range.split('-').map(Number);
+                    if (!Number.isFinite(lo) || !Number.isFinite(hi)) return false;
+                    if (lo > hi) return false;
+                    if (lo < meta.min || hi > meta.max) return false;
+                    return true;
+                }
+                const n = Number(range);
+                if (!Number.isFinite(n)) return false;
+                // dow allows 0-7
+                return n >= meta.min && n <= meta.max;
+            });
+        }
+
+        function parseExpression(expr) {
+            if (!expr) {
+                return { ok: false, error: '请输入 Cron 表达式' };
+            }
+            const parts = expr.split(/\s+/).filter(Boolean);
+            const want6 = withSeconds();
+            let second = '0';
+            let minute, hour, dom, month, dow;
+
+            if (want6) {
+                if (parts.length === 6) {
+                    [second, minute, hour, dom, month, dow] = parts;
+                } else if (parts.length === 5) {
+                    // allow pasting 5-field while toggle on: treat seconds as 0
+                    [minute, hour, dom, month, dow] = parts;
+                    second = '0';
+                } else if (parts.length === 7) {
+                    [second, minute, hour, dom, month, dow] = parts;
+                } else {
+                    return { ok: false, error: '含秒模式需要 5~6 个字段（分 时 日 月 周，或 秒 分 时 日 月 周）' };
+                }
+            } else if (parts.length === 5) {
+                [minute, hour, dom, month, dow] = parts;
+            } else if (parts.length === 6) {
+                [second, minute, hour, dom, month, dow] = parts;
+            } else if (parts.length === 7) {
+                [second, minute, hour, dom, month, dow] = parts;
+            } else {
+                return { ok: false, error: '无效表达式：标准 Cron 需要 5 个字段（分 时 日 月 周）' };
+            }
+
+            const fields = want6 || parts.length >= 6
+                ? [
+                    { ...FIELD_META_6[0], value: second },
+                    { ...FIELD_META_5[0], value: minute },
+                    { ...FIELD_META_5[1], value: hour },
+                    { ...FIELD_META_5[2], value: dom },
+                    { ...FIELD_META_5[3], value: month },
+                    { ...FIELD_META_5[4], value: dow }
+                ]
+                : [
+                    { ...FIELD_META_5[0], value: minute },
+                    { ...FIELD_META_5[1], value: hour },
+                    { ...FIELD_META_5[2], value: dom },
+                    { ...FIELD_META_5[3], value: month },
+                    { ...FIELD_META_5[4], value: dow }
+                ];
+
+            const invalid = fields.filter((f) => !validateFieldToken(f.value, f));
+            if (invalid.length) {
+                return {
+                    ok: false,
+                    error: `字段无效：${invalid.map((f) => f.label).join('、')}`,
+                    fields
+                };
+            }
+
+            return {
+                ok: true,
+                fields,
+                second,
+                minute,
+                hour,
+                dom,
+                month,
+                dow,
+                useSeconds: want6 || parts.length >= 6
+            };
+        }
+
+        function describeField(value, unit, mapFn) {
+            if (value === '*' || value === '?') return null;
+            if (value.includes('/')) {
+                const [left, step] = value.split('/');
+                if (left === '*' || left === '0') return `每${step}${unit}`;
+                if (left.includes('-')) {
+                    const [lo, hi] = left.split('-');
+                    const a = mapFn ? mapFn(lo) : lo;
+                    const b = mapFn ? mapFn(hi) : hi;
+                    return `${a}–${b}${unit}每隔${step}`;
+                }
+                const base = mapFn ? mapFn(left) : left;
+                return `从${base}${unit}起每隔${step}`;
+            }
+            if (value.includes(',')) {
+                const items = value.split(',').map((v) => (mapFn ? mapFn(v.trim()) : v.trim()));
+                return `${items.join('、')}${unit}`;
+            }
+            if (value.includes('-')) {
+                const [lo, hi] = value.split('-');
+                const a = mapFn ? mapFn(lo) : lo;
+                const b = mapFn ? mapFn(hi) : hi;
+                return `${a}–${b}${unit}`;
+            }
+            return `${mapFn ? mapFn(value) : value}${unit}`;
+        }
+
+        function describeCron(minute, hour, dom, month, dow, second, useSeconds) {
+            const dowMap = { 0: '日', 1: '一', 2: '二', 3: '三', 4: '四', 5: '五', 6: '六', 7: '日' };
+            const mapDow = (d) => dowMap[String(d)] != null ? dowMap[String(d)] : d;
+            const chunks = [];
+
+            if (useSeconds && second && second !== '0' && second !== '*') {
+                const s = describeField(second, '秒');
+                if (s) chunks.push(s);
+            }
+
+            const dowPart = describeField(dow, '', mapDow);
+            if (dowPart) chunks.push(`周${dowPart}`);
+
+            const monPart = describeField(month, '月');
+            if (monPart) chunks.push(monPart);
+
+            const domPart = describeField(dom, '号');
+            if (domPart) chunks.push(domPart);
+
+            const hourPart = describeField(hour, '时');
+            if (hourPart) chunks.push(hourPart);
+            else if (hour === '*') chunks.push('每小时');
+
+            const minPart = describeField(minute, '分');
+            if (minPart) chunks.push(minPart);
+            else if (minute === '*') chunks.push('每分钟');
+
+            if (!chunks.length) return '每分钟执行一次';
+            return '执行时间：' + chunks.join('，');
+        }
+
+        function matchesCronField(value, field) {
+            if (field === '*' || field === '?') return true;
+            if (field.includes(',')) {
+                return field.split(',').some((v) => matchesCronField(value, v.trim()));
+            }
+            let rangePart = field;
+            let step = 1;
+            if (field.includes('/')) {
+                const [left, right] = field.split('/');
+                rangePart = left;
+                step = Number(right);
+                if (!Number.isFinite(step) || step <= 0) return false;
+            }
+            if (rangePart === '*') {
+                return value % step === 0;
+            }
+            if (rangePart.includes('-')) {
+                const [lo, hi] = rangePart.split('-').map(Number);
+                if (!Number.isFinite(lo) || !Number.isFinite(hi)) return false;
+                if (value < lo || value > hi) return false;
+                return (value - lo) % step === 0;
+            }
+            const base = Number(rangePart);
+            if (!Number.isFinite(base)) return false;
+            if (step === 1) return value === base;
+            return value >= base && (value - base) % step === 0;
+        }
+
+        function matchesCronDow(value, field) {
+            if (field === '*' || field === '?') return true;
+            const norm = field.replace(/\b7\b/g, '0');
+            return matchesCronField(value, norm);
+        }
+
+        // Expand a cron field into sorted unique integers (no per-tick scanning).
+        function expandCronField(field, min, max, { isDow = false } = {}) {
+            const values = new Set();
+            const add = (n) => {
+                if (!Number.isFinite(n)) return;
+                if (isDow && n === 7) n = 0;
+                if (n < min || n > max) return;
+                if (isDow && n > 6) return;
+                values.add(n);
+            };
+
+            const pushRange = (lo, hi, step) => {
+                if (!Number.isFinite(lo) || !Number.isFinite(hi) || !Number.isFinite(step) || step <= 0) return;
+                if (lo > hi) return;
+                for (let v = lo; v <= hi; v += step) add(v);
+            };
+
+            const parts = String(field || '*').split(',');
+            for (const raw of parts) {
+                let token = raw.trim();
+                if (!token) continue;
+                let step = 1;
+                if (token.includes('/')) {
+                    const [left, right] = token.split('/');
+                    token = left;
+                    step = Number(right);
+                    if (!Number.isFinite(step) || step <= 0) continue;
+                }
+                if (token === '*' || token === '?') {
+                    pushRange(min, isDow ? 6 : max, step);
+                    continue;
+                }
+                if (token.includes('-')) {
+                    const [lo, hi] = token.split('-').map(Number);
+                    pushRange(lo, hi, step);
+                    continue;
+                }
+                const base = Number(token);
+                if (!Number.isFinite(base)) continue;
+                if (step === 1) {
+                    add(base);
+                } else {
+                    pushRange(base, isDow ? 6 : max, step);
+                }
+            }
+            return Array.from(values).sort((a, b) => a - b);
+        }
+
+        function dayMatchesDate(date, domField, dowField) {
+            const okDom = matchesCronField(date.getDate(), domField);
+            const okDow = matchesCronDow(date.getDay(), dowField);
+            if (domField !== '*' && domField !== '?' && dowField !== '*' && dowField !== '?') {
+                return okDom || okDow;
+            }
+            return okDom && okDow;
+        }
+
+        function lowerBound(arr, value) {
+            let lo = 0;
+            let hi = arr.length;
+            while (lo < hi) {
+                const mid = (lo + hi) >> 1;
+                if (arr[mid] < value) lo = mid + 1;
+                else hi = mid;
+            }
+            return lo;
+        }
+
+        function getNextCronRuns(fields, count, useSeconds) {
+            const map = Object.fromEntries(fields.map((f) => [f.key, f.value]));
+            const seconds = useSeconds ? expandCronField(map.second || '0', 0, 59) : [0];
+            const minutes = expandCronField(map.minute, 0, 59);
+            const hours = expandCronField(map.hour, 0, 23);
+            const months = new Set(expandCronField(map.month, 1, 12));
+
+            if (!seconds.length || !minutes.length || !hours.length || !months.size) {
+                return [];
+            }
+
+            const now = new Date();
+            const runs = [];
+            // Start strictly after "now" at the configured granularity.
+            const start = new Date(now.getTime());
+            start.setMilliseconds(0);
+            if (useSeconds) {
+                start.setSeconds(start.getSeconds() + 1);
+            } else {
+                start.setSeconds(0, 0);
+                start.setMinutes(start.getMinutes() + 1);
+            }
+
+            const startH = start.getHours();
+            const startM = start.getMinutes();
+            const startS = start.getSeconds();
+
+            // Walk calendar days; for each valid day jump into allowed h/m/s via lowerBound.
+            const day = new Date(start.getFullYear(), start.getMonth(), start.getDate());
+            const maxDays = 400;
+            for (let d = 0; d < maxDays && runs.length < count; d++) {
+                const y = day.getFullYear();
+                const monthIdx = day.getMonth();
+                const m = monthIdx + 1;
+                const dateNum = day.getDate();
+                if (months.has(m) && dayMatchesDate(day, map.dom, map.dow)) {
+                    const sameDay = d === 0;
+                    let hi = sameDay ? lowerBound(hours, startH) : 0;
+                    for (; hi < hours.length && runs.length < count; hi++) {
+                        const hour = hours[hi];
+                        let mi = (sameDay && hour === startH) ? lowerBound(minutes, startM) : 0;
+                        for (; mi < minutes.length && runs.length < count; mi++) {
+                            const minute = minutes[mi];
+                            let si = (sameDay && hour === startH && minute === startM)
+                                ? lowerBound(seconds, startS)
+                                : 0;
+                            for (; si < seconds.length && runs.length < count; si++) {
+                                runs.push(new Date(y, monthIdx, dateNum, hour, minute, seconds[si], 0));
+                            }
+                        }
+                    }
+                }
+                day.setDate(day.getDate() + 1);
+            }
+            return runs;
+        }
+
+        function renderFields(fields, invalidKeys = []) {
+            const wrap = document.getElementById('cronFields');
+            if (!wrap) return;
+            if (!fields || !fields.length) {
+                wrap.innerHTML = '';
+                return;
+            }
+            wrap.innerHTML = fields.map((f) => {
+                const bad = invalidKeys.includes(f.key) || invalidKeys.includes(f.label);
+                return `<div class="cron-field-pill${bad ? ' is-invalid' : ''}"><span class="cron-field-name">${f.label}</span><span class="cron-field-value">${escapeCronText(f.value)}</span></div>`;
+            }).join('');
+        }
+
+        function renderNextRuns(runs, error) {
+            const list = document.getElementById('cronNextList');
+            if (!list) return;
+            if (error) {
+                lastRunsText = '';
+                list.innerHTML = `<div class="cron-placeholder is-error">${escapeCronText(error)}</div>`;
+                return;
+            }
+            if (!runs || !runs.length) {
+                lastRunsText = '';
+                list.innerHTML = '<div class="cron-placeholder">一年内没有匹配到执行时间</div>';
+                return;
+            }
+            const lines = new Array(runs.length);
+            const rows = new Array(runs.length);
+            for (let i = 0; i < runs.length; i++) {
+                const text = formatDate(runs[i]);
+                lines[i] = `${i + 1}. ${text}`;
+                rows[i] = `<div class="cron-next-row"><span class="cron-next-index">${i + 1}</span><span class="cron-next-time">${text}</span></div>`;
+            }
+            lastRunsText = lines.join('\n');
+            list.innerHTML = rows.join('');
+        }
+
+        function refreshNextRunsOnly() {
+            if (!lastParsed || !lastParsed.ok) {
+                scheduleParse();
+                return;
+            }
+            try {
+                renderNextRuns(getNextCronRuns(lastParsed.fields, nextCount(), lastParsed.useSeconds));
+            } catch (e) {
+                renderNextRuns([], '无法计算执行时间: ' + e.message);
+            }
+            debouncedPersist();
+        }
+
+        function parseCron(expr) {
+            const descEl = document.getElementById('cronDescText');
+            const parsed = parseExpression(expr);
+
+            if (!parsed.ok) {
+                lastParsed = null;
+                if (descEl) {
+                    descEl.textContent = parsed.error;
+                    descEl.classList.add('is-error');
+                }
+                renderFields(parsed.fields || [], (parsed.fields || []).filter((f) => !validateFieldToken(f.value, f)).map((f) => f.key));
+                renderNextRuns([], parsed.error);
+                return;
+            }
+
+            lastParsed = parsed;
+            if (descEl) {
+                descEl.classList.remove('is-error');
+                descEl.textContent = describeCron(
+                    parsed.minute, parsed.hour, parsed.dom, parsed.month, parsed.dow,
+                    parsed.second, parsed.useSeconds
+                );
+            }
+            renderFields(parsed.fields);
+
+            try {
+                renderNextRuns(getNextCronRuns(parsed.fields, nextCount(), parsed.useSeconds));
+            } catch (e) {
+                renderNextRuns([], '无法计算执行时间: ' + e.message);
+            }
+
+            debouncedPersist();
+        }
+
+        const debouncedParse = debounce(() => scheduleParse(), 100);
+        const debouncedPersist = debounce(() => { persistOptions(); }, 600);
+
+        function buildFromVisualizer() {
+            const minute = document.getElementById('cronBuildMinute')?.value || '*';
+            const hour = document.getElementById('cronBuildHour')?.value || '*';
+            const dom = document.getElementById('cronBuildDom')?.value || '*';
+            const month = document.getElementById('cronBuildMonth')?.value || '*';
+            const dow = document.getElementById('cronBuildDow')?.value || '*';
+            const expr = withSeconds()
+                ? `0 ${minute} ${hour} ${dom} ${month} ${dow}`
+                : `${minute} ${hour} ${dom} ${month} ${dow}`;
+            setExpr(expr, { fromBuilder: true });
+            scheduleParse(expr);
+        }
+
+        function applyExprToBuilder(expr) {
+            const parsed = parseExpression(expr);
+            if (!parsed.ok) return;
+            const setVal = (id, v) => {
+                const el = document.getElementById(id);
+                if (!el) return;
+                const opt = Array.from(el.options).find((o) => o.value === v);
+                if (opt) el.value = v;
+            };
+            setVal('cronBuildMinute', parsed.minute);
+            setVal('cronBuildHour', parsed.hour);
+            setVal('cronBuildDom', parsed.dom);
+            setVal('cronBuildMonth', parsed.month);
+            setVal('cronBuildDow', parsed.dow);
+        }
+
+        async function persistOptions() {
+            if (typeof Settings === 'undefined' || !Settings.set) return;
+            await Settings.set('cronOptions', {
+                mode: currentMode,
+                expression: getExpr(),
+                withSeconds: withSeconds(),
+                nextCount: nextCount()
+            });
+        }
+
+        function setActivePreset(expr) {
+            document.querySelectorAll('.cron-preset').forEach((btn) => {
+                btn.classList.toggle('is-active', (btn.dataset.cron || '') === expr);
+            });
+        }
+
+        function normalizeExprForSecondsToggle() {
+            const expr = getExpr();
+            const parts = expr.split(/\s+/).filter(Boolean);
+            const input = document.getElementById('cronInput');
+            if (withSeconds()) {
+                if (input) input.placeholder = '秒 分 时 日 月 周 ，如 0 */5 * * * *';
+                if (parts.length === 5) {
+                    setExpr(`0 ${expr}`);
+                    return getExpr();
+                }
+            } else {
+                if (input) input.placeholder = '分 时 日 月 周 ，如 0 9 * * 1-5';
+                if (parts.length === 6) {
+                    setExpr(parts.slice(1).join(' '));
+                    return getExpr();
+                }
+                if (parts.length === 7) {
+                    setExpr(parts.slice(1, 6).join(' '));
+                    return getExpr();
+                }
+            }
+            return expr;
+        }
+
+        // Mode switch
+        document.getElementById('cronModeExpr')?.addEventListener('click', () => {
+            currentMode = 'expr';
+            syncModeUI();
+            debouncedPersist();
+        });
+        document.getElementById('cronModeBuilder')?.addEventListener('click', () => {
+            currentMode = 'builder';
+            applyExprToBuilder(getExpr());
+            syncModeUI();
+            debouncedPersist();
         });
 
+        document.getElementById('cronParseBtn')?.addEventListener('click', () => scheduleParse());
         document.getElementById('cronInput')?.addEventListener('keydown', (e) => {
-            if (e.key === 'Enter') parseCron(e.target.value);
+            if (e.key === 'Enter') scheduleParse(e.target.value);
+        });
+        document.getElementById('cronInput')?.addEventListener('input', () => {
+            if (!syncingFromBuilder) debouncedParse();
         });
 
-        // Preset buttons
-        document.querySelectorAll('.cron-preset').forEach(btn => {
+        document.getElementById('cronWithSeconds')?.addEventListener('change', () => {
+            const expr = normalizeExprForSecondsToggle();
+            const parts = expr.split(/\s+/).filter(Boolean);
+            setActivePreset(parts.length === 6 ? parts.slice(1).join(' ') : expr);
+            scheduleParse(expr);
+        });
+        document.getElementById('cronNextCount')?.addEventListener('change', () => {
+            // Count-only change: skip full re-parse / field rebuild.
+            requestAnimationFrame(() => refreshNextRunsOnly());
+        });
+
+        document.querySelectorAll('.cron-preset').forEach((btn) => {
             btn.addEventListener('click', () => {
-                const input = document.getElementById('cronInput');
-                if (input) input.value = btn.dataset.cron;
-                parseCron(btn.dataset.cron);
+                let expr = btn.dataset.cron || '';
+                if (withSeconds()) {
+                    const parts = expr.split(/\s+/).filter(Boolean);
+                    if (parts.length === 5) expr = `0 ${expr}`;
+                }
+                currentMode = 'expr';
+                syncModeUI();
+                setExpr(expr);
+                setActivePreset(btn.dataset.cron || '');
+                scheduleParse(expr);
             });
         });
+
+        ['cronBuildMinute', 'cronBuildHour', 'cronBuildDom', 'cronBuildMonth', 'cronBuildDow'].forEach((id) => {
+            document.getElementById(id)?.addEventListener('change', buildFromVisualizer);
+        });
+
+        document.getElementById('cronCopyExprBtn')?.addEventListener('click', () => {
+            const expr = getExpr();
+            if (!expr) { toast('没有可复制的表达式'); return; }
+            navigator.clipboard.writeText(expr).then(() => toast('已复制表达式')).catch(() => toast('复制失败'));
+        });
+        document.getElementById('cronCopyNextBtn')?.addEventListener('click', () => {
+            if (!lastRunsText) { toast('还没有执行列表'); return; }
+            navigator.clipboard.writeText(lastRunsText).then(() => toast('已复制执行列表')).catch(() => toast('复制失败'));
+        });
+
+        updateTzNote();
+        syncModeUI();
+
+        (async () => {
+            try {
+                if (typeof Settings !== 'undefined' && Settings.get) {
+                    const saved = await Settings.get('cronOptions');
+                    if (saved && typeof saved === 'object') {
+                        currentMode = saved.mode === 'builder' ? 'builder' : 'expr';
+                        if (document.getElementById('cronWithSeconds')) {
+                            document.getElementById('cronWithSeconds').checked = !!saved.withSeconds;
+                        }
+                        if (document.getElementById('cronNextCount') && [5, 10, 20].includes(Number(saved.nextCount))) {
+                            document.getElementById('cronNextCount').value = String(saved.nextCount);
+                        }
+                        if (saved.expression) setExpr(saved.expression);
+                        syncModeUI();
+                        if (currentMode === 'builder') applyExprToBuilder(getExpr());
+                    }
+                }
+            } catch (_) { /* ignore */ }
+            if (!getExpr()) setExpr('0 9 * * 1-5');
+            const boot = getExpr();
+            const parts = boot.split(/\s+/).filter(Boolean);
+            setActivePreset(parts.length === 6 ? parts.slice(1).join(' ') : boot);
+            scheduleParse(boot);
+        })();
     }
 
-    function parseCron(expr) {
-        const descEl = document.getElementById('cronDesc');
-        const nextEl = document.getElementById('cronNextRuns');
-        if (!descEl || !nextEl) return;
+    // ==================== Code Diff (CodeMirror side-by-side) ====================
+    let diffHunks = [];
+    let diffHunkIdx = -1;
+    let codeDiffEditors = null;
+    let codeDiffUpdating = false;
+    let codeDiffLang = 'auto';
+    let codeDiffDetected = 'plain';
+    let runCodeDiffDebounced = null;
 
-        expr = expr.trim();
-        if (!expr) { descEl.value = ''; nextEl.value = ''; return; }
+    function codeDiffSyncScrollOn() {
+        return document.getElementById('codeDiffSyncScroll')?.classList.contains('is-on');
+    }
 
-        // Support both 5-field and 6-field (with seconds) cron
-        const parts = expr.split(/\s+/);
-        let minute, hour, dayOfMonth, month, dayOfWeek;
+    function resolveCodeDiffTheme() {
+        const ref = editorManager.get('jsonCompareA') || editorManager.get('inputArea');
+        return ref?.getOption('theme') || editorManager.commonOptions.theme;
+    }
 
-        if (parts.length === 5) {
-            [minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-        } else if (parts.length === 6) {
-            // seconds field ignored for description
-            [, minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-        } else if (parts.length === 7) {
-            [, minute, hour, dayOfMonth, month, dayOfWeek] = parts;
-        } else {
-            descEl.value = '无效的 Cron 表达式 (需要 5~7 个字段)';
-            nextEl.value = '';
-            return;
+    // CodeMirror cannot measure inside a display:none panel, so editors are created on first show.
+    function ensureCodeDiffEditors() {
+        if (codeDiffEditors) return codeDiffEditors;
+        if (typeof editorManager === 'undefined' || typeof CodeMirror === 'undefined') return null;
+
+        const opts = {
+            theme: resolveCodeDiffTheme(),
+            lineWrapping: false,
+            foldGutter: false,
+            gutters: ['CodeMirror-linenumbers']
+        };
+        const a = editorManager.initFromTextArea('codeDiffA', null, opts);
+        const b = editorManager.initFromTextArea('codeDiffB', null, opts);
+        if (!a || !b) return null;
+        codeDiffEditors = { a, b };
+
+        const onChange = () => {
+            if (!codeDiffUpdating) runCodeDiffDebounced?.();
+        };
+        a.on('change', onChange);
+        b.on('change', onChange);
+
+        if (typeof CmDiff !== 'undefined') {
+            CmDiff.linkScrollPair(a, b, null, null, { isEnabled: codeDiffSyncScrollOn });
         }
 
-        // Build description
-        const desc = describeCron(minute, hour, dayOfMonth, month, dayOfWeek);
-        descEl.value = desc;
+        applyCodeDiffMode();
+        runCodeDiff();
+        return codeDiffEditors;
+    }
 
-        // Calculate next N runs
-        try {
-            const runs = getNextCronRuns(minute, hour, dayOfMonth, month, dayOfWeek, 10);
-            nextEl.value = runs.map((d, i) => `${i+1}.  ${formatDate(d)}`).join('\n');
-        } catch (e) {
-            nextEl.value = '无法计算执行时间: ' + e.message;
+    function setCodeDiffValues(valueA, valueB) {
+        const eds = ensureCodeDiffEditors();
+        if (!eds) return;
+        codeDiffUpdating = true;
+        eds.a.setValue(valueA);
+        eds.b.setValue(valueB);
+        codeDiffUpdating = false;
+        runCodeDiff();
+    }
+
+    function setEditorMode(editor, mode) {
+        // Performance mode parks the real mode in _savedMode; update that instead.
+        if (editor._savedMode !== undefined && editor._savedMode !== null) {
+            editor._savedMode = mode;
+        } else if (editor.getOption('mode') !== mode) {
+            editor.setOption('mode', mode);
         }
     }
 
-    function describeCron(min, hour, dom, mon, dow) {
-        const parts = [];
+    function applyCodeDiffMode() {
+        if (!codeDiffEditors || typeof CodeLang === 'undefined') return;
+        const lang = codeDiffLang === 'auto' ? codeDiffDetected : codeDiffLang;
+        const mode = CodeLang.getMode(lang);
+        setEditorMode(codeDiffEditors.a, mode);
+        setEditorMode(codeDiffEditors.b, mode);
 
-        // Day of week
-        const dowMap = { '0':'日','1':'一','2':'二','3':'三','4':'四','5':'五','6':'六','7':'日' };
-        if (dow !== '*' && dow !== '?') {
-            const range = dow.replace(/\d/g, d => dowMap[d] || d);
-            parts.push(`周${range}`);
+        const detectedEl = document.getElementById('codeDiffLangDetected');
+        if (detectedEl) {
+            const hasText = codeDiffEditors.a.getValue() || codeDiffEditors.b.getValue();
+            detectedEl.textContent = codeDiffLang === 'auto' && hasText ? `识别为 ${CodeLang.getLabel(codeDiffDetected)}` : '';
         }
-
-        // Month
-        if (mon !== '*' && mon !== '?') parts.push(`${mon}月`);
-
-        // Day of month
-        if (dom !== '*' && dom !== '?') parts.push(`${dom}号`);
-
-        // Hour
-        if (hour === '*') {
-            parts.push('每小时');
-        } else if (hour.includes('/')) {
-            parts.push(`每${hour.split('/')[1]}小时`);
-        } else if (hour !== '?') {
-            parts.push(`${hour}时`);
-        }
-
-        // Minute
-        if (min === '*') {
-            parts.push('每分钟');
-        } else if (min.includes('/')) {
-            parts.push(`每${min.split('/')[1]}分钟`);
-        } else if (min !== '?') {
-            parts.push(`${min}分`);
-        }
-
-        return parts.length ? '执行时间: ' + parts.join(' ') : '每分钟执行';
     }
-
-    function getNextCronRuns(min, hour, dom, mon, dow, count) {
-        const runs = [];
-        const now = new Date();
-        let cursor = new Date(now.getFullYear(), now.getMonth(), now.getDate(), now.getHours(), now.getMinutes() + 1, 0, 0);
-
-        const maxIter = 525960; // ~1 year of minutes
-        let iter = 0;
-
-        while (runs.length < count && iter < maxIter) {
-            iter++;
-            if (matchesCronField(cursor.getMonth() + 1, mon) &&
-                matchesCronField(cursor.getDate(), dom) &&
-                matchesCronDow(cursor.getDay(), dow) &&
-                matchesCronField(cursor.getHours(), hour) &&
-                matchesCronField(cursor.getMinutes(), min)) {
-                runs.push(new Date(cursor));
-            }
-            cursor = new Date(cursor.getTime() + 60000);
-        }
-        return runs;
-    }
-
-    function matchesCronField(value, field) {
-        if (field === '*' || field === '?') return true;
-        // Handle step: */5 or 0/5
-        if (field.includes('/')) {
-            const [start, step] = field.split('/').map(Number);
-            const base = isNaN(start) ? 0 : start;
-            return (value - base) >= 0 && (value - base) % step === 0;
-        }
-        // Handle range: 1-5
-        if (field.includes('-') && !field.includes(',')) {
-            const [lo, hi] = field.split('-').map(Number);
-            return value >= lo && value <= hi;
-        }
-        // Handle list: 1,3,5
-        if (field.includes(',')) {
-            return field.split(',').some(v => matchesCronField(value, v.trim()));
-        }
-        return value === Number(field);
-    }
-
-    function matchesCronDow(value, field) {
-        if (field === '*' || field === '?') return true;
-        // Normalize: 7 → 0 (Sunday), word boundary to avoid replacing 17→10
-        const norm = f => f.replace(/\b7\b/g, '0');
-        return matchesCronField(value, norm(field));
-    }
-
-    // ==================== Code Diff (IDE-style side-by-side) ====================
-    let diffHunks = [];   // each hunk = first line index (0-based) of a group of consecutive changed lines in A
-    let diffHunkIdx = -1; // current navigation position
 
     function initCodeDiff() {
-        const aEl = document.getElementById('codeDiffA');
-        const bEl = document.getElementById('codeDiffB');
+        const panel = document.getElementById('toolPanelCodeDiff');
+        const langSelect = document.getElementById('codeDiffLang');
 
-        // Auto-diff on input
-        const debouncedDiff = debounce(runCodeDiff, 300);
-        aEl?.addEventListener('input', debouncedDiff);
-        bEl?.addEventListener('input', debouncedDiff);
+        function toast(msg) {
+            if (DevKit.App && typeof DevKit.App.showToast === 'function') {
+                DevKit.App.showToast(msg);
+            }
+        }
 
-        // Scroll sync: textarea -> its own gutter & backdrop
-        setupPaneScroll('codeDiffA', 'codeDiffGutterA', 'codeDiffBackdropA');
-        setupPaneScroll('codeDiffB', 'codeDiffGutterB', 'codeDiffBackdropB');
+        function chipOn(id) {
+            return document.getElementById(id)?.classList.contains('is-on');
+        }
+
+        function setChip(id, on) {
+            const el = document.getElementById(id);
+            if (!el) return;
+            el.classList.toggle('is-on', !!on);
+            el.setAttribute('aria-pressed', on ? 'true' : 'false');
+        }
+
+        function getValues() {
+            const eds = ensureCodeDiffEditors();
+            return eds ? { a: eds.a.getValue(), b: eds.b.getValue() } : { a: '', b: '' };
+        }
+
+        async function persist() {
+            if (typeof Settings === 'undefined' || !Settings.set) return;
+            await Settings.set('codeDiffOptions', {
+                ignoreWhitespace: chipOn('codeDiffIgnoreWhitespace'),
+                ignoreCase: chipOn('codeDiffIgnoreCase'),
+                syncScroll: chipOn('codeDiffSyncScroll'),
+                lang: codeDiffLang
+            });
+        }
+        const debouncedPersist = debounce(() => { persist(); }, 400);
+
+        runCodeDiffDebounced = debounce(runCodeDiff, 220);
+
+        if (langSelect && typeof CodeLang !== 'undefined') {
+            Object.keys(CodeLang.LANGS).forEach((id) => {
+                const opt = document.createElement('option');
+                opt.value = id;
+                opt.textContent = CodeLang.LANGS[id].label;
+                langSelect.appendChild(opt);
+            });
+            langSelect.addEventListener('change', () => {
+                codeDiffLang = langSelect.value;
+                applyCodeDiffMode();
+                debouncedPersist();
+            });
+        }
+
+        ['codeDiffIgnoreWhitespace', 'codeDiffIgnoreCase', 'codeDiffSyncScroll'].forEach((id) => {
+            document.getElementById(id)?.addEventListener('click', () => {
+                setChip(id, !chipOn(id));
+                if (id !== 'codeDiffSyncScroll') runCodeDiff();
+                debouncedPersist();
+            });
+        });
 
         document.getElementById('codeDiffSwapBtn')?.addEventListener('click', () => {
-            if (aEl && bEl) {
-                const tmp = aEl.value;
-                aEl.value = bEl.value;
-                bEl.value = tmp;
-                runCodeDiff();
-            }
+            const { a, b } = getValues();
+            setCodeDiffValues(b, a);
         });
 
-        // Options also re-trigger diff
-        document.getElementById('codeDiffIgnoreWhitespace')?.addEventListener('change', runCodeDiff);
-        document.getElementById('codeDiffIgnoreCase')?.addEventListener('change', runCodeDiff);
+        document.getElementById('codeDiffCopyABtn')?.addEventListener('click', () => {
+            const v = getValues().a;
+            if (!v) { toast('A 侧为空'); return; }
+            navigator.clipboard.writeText(v).then(() => toast('已复制 A')).catch(() => toast('复制失败'));
+        });
+        document.getElementById('codeDiffCopyBBtn')?.addEventListener('click', () => {
+            const v = getValues().b;
+            if (!v) { toast('B 侧为空'); return; }
+            navigator.clipboard.writeText(v).then(() => toast('已复制 B')).catch(() => toast('复制失败'));
+        });
 
         document.getElementById('codeDiffClearBtn')?.addEventListener('click', () => {
-            if (aEl) aEl.value = '';
-            if (bEl) bEl.value = '';
-            clearDiffOverlays();
+            setCodeDiffValues('', '');
         });
 
-        // Diff navigation
         document.getElementById('codeDiffPrevBtn')?.addEventListener('click', () => navigateDiff(-1));
         document.getElementById('codeDiffNextBtn')?.addEventListener('click', () => navigateDiff(1));
 
-        // Fullscreen toggle
+        panel?.addEventListener('keydown', (e) => {
+            if (e.target && (e.target.tagName === 'TEXTAREA' || e.target.tagName === 'INPUT' || e.target.tagName === 'SELECT')) {
+                if (!(e.altKey && (e.key === 'ArrowUp' || e.key === 'ArrowDown'))) return;
+            }
+            if (e.key === 'ArrowUp') {
+                e.preventDefault();
+                navigateDiff(-1);
+            } else if (e.key === 'ArrowDown') {
+                e.preventDefault();
+                navigateDiff(1);
+            }
+        });
+
         const fsBtn = document.getElementById('codeDiffFullscreenBtn');
-        const panel = document.getElementById('toolPanelCodeDiff');
         if (fsBtn && panel) {
             fsBtn.addEventListener('click', () => {
-                if (document.fullscreenElement) {
-                    document.exitFullscreen();
-                } else {
-                    panel.requestFullscreen();
-                }
+                if (document.fullscreenElement) document.exitFullscreen();
+                else panel.requestFullscreen();
             });
             document.addEventListener('fullscreenchange', () => {
                 const isFs = document.fullscreenElement === panel;
-                fsBtn.querySelector('.cdiff-icon-expand').style.display = isFs ? 'none' : '';
-                fsBtn.querySelector('.cdiff-icon-collapse').style.display = isFs ? '' : 'none';
+                const expand = fsBtn.querySelector('.cdiff-icon-expand');
+                const collapse = fsBtn.querySelector('.cdiff-icon-collapse');
+                if (expand) expand.style.display = isFs ? 'none' : '';
+                if (collapse) collapse.style.display = isFs ? '' : 'none';
+                if (codeDiffEditors) {
+                    codeDiffEditors.a.refresh();
+                    codeDiffEditors.b.refresh();
+                }
             });
         }
+
+        (async () => {
+            try {
+                if (typeof Settings !== 'undefined' && Settings.get) {
+                    const saved = await Settings.get('codeDiffOptions');
+                    if (saved && typeof saved === 'object') {
+                        setChip('codeDiffIgnoreWhitespace', !!saved.ignoreWhitespace);
+                        setChip('codeDiffIgnoreCase', !!saved.ignoreCase);
+                        setChip('codeDiffSyncScroll', saved.syncScroll !== false);
+                        if (saved.lang && (saved.lang === 'auto' || CodeLang?.LANGS?.[saved.lang])) {
+                            codeDiffLang = saved.lang;
+                        }
+                    }
+                }
+            } catch (_) { /* ignore */ }
+            if (langSelect) langSelect.value = codeDiffLang;
+            applyCodeDiffMode();
+            runCodeDiff();
+        })();
+    }
+
+    function onCodeDiffShown() {
+        const eds = ensureCodeDiffEditors();
+        if (!eds) return;
+        setTimeout(() => {
+            eds.a.refresh();
+            eds.b.refresh();
+        }, 0);
     }
 
     function navigateDiff(direction) {
-        if (diffHunks.length === 0) return;
+        if (diffHunks.length === 0 || !codeDiffEditors) return;
         diffHunkIdx += direction;
         if (diffHunkIdx < 0) diffHunkIdx = diffHunks.length - 1;
         if (diffHunkIdx >= diffHunks.length) diffHunkIdx = 0;
         updateNavPos();
 
         const hunk = diffHunks[diffHunkIdx];
-        const lineHeight = 20;
-        const textarea = document.getElementById(hunk.side === 'a' ? 'codeDiffA' : 'codeDiffB');
-        if (!textarea) return;
-
-        const targetScroll = hunk.line * lineHeight - textarea.clientHeight / 3;
-        textarea.scrollTop = Math.max(0, targetScroll);
-        // Sync the other side to the same position
-        const otherTextarea = document.getElementById(hunk.side === 'a' ? 'codeDiffB' : 'codeDiffA');
-        if (otherTextarea) otherTextarea.scrollTop = textarea.scrollTop;
-        // Trigger scroll event to sync gutter/backdrop
-        textarea.dispatchEvent(new Event('scroll'));
-        otherTextarea?.dispatchEvent(new Event('scroll'));
+        const editor = hunk.side === 'a' ? codeDiffEditors.a : codeDiffEditors.b;
+        if (typeof CmDiff === 'undefined') return;
+        CmDiff.scrollEditorToLine(editor, hunk.line);
+        CmDiff.flashLine(editor, hunk.line);
     }
 
     function updateNavPos() {
@@ -1702,48 +3971,78 @@
         }
     }
 
-    function setupPaneScroll(textareaId, gutterId, backdropId) {
-        const textarea = document.getElementById(textareaId);
-        const gutter = document.getElementById(gutterId);
-        const backdrop = document.getElementById(backdropId);
-        if (!textarea) return;
-        textarea.addEventListener('scroll', () => {
-            if (gutter) gutter.scrollTop = textarea.scrollTop;
-            if (backdrop) backdrop.scrollTop = textarea.scrollTop;
-        });
-    }
-
-    function clearDiffOverlays() {
-        const ids = ['codeDiffGutterA', 'codeDiffGutterB', 'codeDiffBackdropA', 'codeDiffBackdropB'];
-        ids.forEach(id => { const el = document.getElementById(id); if (el) el.innerHTML = ''; });
+    function resetCodeDiffResult() {
+        if (codeDiffEditors && typeof CmDiff !== 'undefined') {
+            CmDiff.clearEditor(codeDiffEditors.a);
+            CmDiff.clearEditor(codeDiffEditors.b);
+        }
         const statsEl = document.getElementById('codeDiffStats');
         if (statsEl) statsEl.textContent = '';
+        const note = document.getElementById('codeDiffTruncateNote');
+        if (note) {
+            note.textContent = '';
+            note.classList.add('hidden');
+        }
         diffHunks = [];
         diffHunkIdx = -1;
         updateNavPos();
     }
 
     function runCodeDiff() {
-        const aStr = document.getElementById('codeDiffA')?.value || '';
-        const bStr = document.getElementById('codeDiffB')?.value || '';
+        if (!codeDiffEditors) return;
+        const { a: editorA, b: editorB } = codeDiffEditors;
+        const aStr = editorA.getValue();
+        const bStr = editorB.getValue();
+
+        const rawA = aStr ? aStr.split('\n') : [];
+        const rawB = bStr ? bStr.split('\n') : [];
+        const metaA = document.getElementById('codeDiffMetaA');
+        const metaB = document.getElementById('codeDiffMetaB');
+        if (metaA) metaA.textContent = `${rawA.length} 行`;
+        if (metaB) metaB.textContent = `${rawB.length} 行`;
+
+        if (typeof CodeLang !== 'undefined') {
+            codeDiffDetected = CodeLang.detect(`${aStr}\n${bStr}`);
+        }
+
+        if (typeof DiffLines === 'undefined' || typeof CmDiff === 'undefined') return;
+
+        const tooLarge = rawA.length > DiffLines.MAX_LINES || rawB.length > DiffLines.MAX_LINES;
+        editorManager.setPerformanceMode('codeDiffA', tooLarge);
+        editorManager.setPerformanceMode('codeDiffB', tooLarge);
+        applyCodeDiffMode();
 
         if (!aStr && !bStr) {
-            clearDiffOverlays();
+            resetCodeDiffResult();
             return;
         }
 
-        const ignoreWs = document.getElementById('codeDiffIgnoreWhitespace')?.checked || false;
-        const ignoreCase = document.getElementById('codeDiffIgnoreCase')?.checked || false;
+        const ignoreWs = document.getElementById('codeDiffIgnoreWhitespace')?.classList.contains('is-on');
+        const ignoreCase = document.getElementById('codeDiffIgnoreCase')?.classList.contains('is-on');
 
-        const linesA = aStr.split('\n');
-        const linesB = bStr.split('\n');
-        const lineDiff = DiffLines.computeLineDiff(linesA, linesB, {
+        const truncA = DiffLines.truncateLines(rawA, DiffLines.MAX_LINES);
+        const truncB = DiffLines.truncateLines(rawB, DiffLines.MAX_LINES);
+
+        const note = document.getElementById('codeDiffTruncateNote');
+        if (note) {
+            if (truncA.truncated || truncB.truncated) {
+                note.textContent = `文本过大，已截断对比并关闭语法高亮（每侧最多 ${DiffLines.MAX_LINES} 行；A ${truncA.originalCount} 行 / B ${truncB.originalCount} 行）`;
+                note.classList.remove('hidden');
+            } else {
+                note.textContent = '';
+                note.classList.add('hidden');
+            }
+        }
+
+        const lineDiff = DiffLines.computeLineDiff(truncA.lines, truncB.lines, {
             ignoreWhitespace: ignoreWs,
             ignoreCase
         });
 
-        DiffLines.renderOverlay('codeDiffGutterA', 'codeDiffBackdropA', linesA.length, lineDiff.statusA);
-        DiffLines.renderOverlay('codeDiffGutterB', 'codeDiffBackdropB', linesB.length, lineDiff.statusB);
+        CmDiff.applyLineStatus(editorA, lineDiff.statusA);
+        CmDiff.applyLineStatus(editorB, lineDiff.statusB);
+        CmDiff.applyWordMarks(editorA, lineDiff.wordsA);
+        CmDiff.applyWordMarks(editorB, lineDiff.wordsB);
 
         diffHunks = DiffLines.mergeHunks(
             DiffLines.buildHunks(lineDiff.statusA, 'a'),
@@ -1758,5 +4057,9 @@
         }
     }
 
-    DevKit.ToolboxController = { init, switchTool };
+    function onShown() {
+        if (currentTool === 'codeDiff' && codeDiffEditors) onCodeDiffShown();
+    }
+
+    DevKit.ToolboxController = { init, switchTool, onShown };
 })();
