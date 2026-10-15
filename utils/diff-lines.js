@@ -3,39 +3,110 @@
 const DiffLines = (function () {
     'use strict';
 
-    function computeLCSDiff(linesA, linesB, normalize) {
-        const m = linesA.length;
-        const n = linesB.length;
+    const MAX_LINES = 8000;
 
-        const dp = Array.from({ length: m + 1 }, () => new Uint32Array(n + 1));
-        for (let i = 1; i <= m; i++) {
-            for (let j = 1; j <= n; j++) {
-                if (normalize(linesA[i - 1]) === normalize(linesB[j - 1])) {
-                    dp[i][j] = dp[i - 1][j - 1] + 1;
+    // Beyond this edit distance the Myers trace gets too large; the middle falls back to replace-all.
+    const MAX_EDIT_DISTANCE = 2000;
+
+    // Myers O((N+M)D) diff over integer ids. Returns ops [kind, indexA, indexB] or null if D exceeds maxD.
+    function myersDiff(a, b, maxD) {
+        const n = a.length;
+        const m = b.length;
+        const max = n + m;
+        const off = max + 1;
+        const v = new Int32Array(2 * max + 3);
+        const trace = [];
+        const limit = Math.min(max, maxD);
+
+        for (let d = 0; d <= limit; d++) {
+            trace.push(v.slice(off - d - 1, off + d + 2));
+            for (let k = -d; k <= d; k += 2) {
+                let x = (k === -d || (k !== d && v[off + k - 1] < v[off + k + 1]))
+                    ? v[off + k + 1]
+                    : v[off + k - 1] + 1;
+                let y = x - k;
+                while (x < n && y < m && a[x] === b[y]) {
+                    x++;
+                    y++;
+                }
+                v[off + k] = x;
+                if (x >= n && y >= m) return backtrackMyers(trace, n, m);
+            }
+        }
+        return null;
+    }
+
+    function backtrackMyers(trace, n, m) {
+        const ops = [];
+        let x = n;
+        let y = m;
+        for (let d = trace.length - 1; d >= 0; d--) {
+            const snap = trace[d];
+            const get = (k) => snap[k + d + 1];
+            const k = x - y;
+            const prevK = (k === -d || (k !== d && get(k - 1) < get(k + 1))) ? k + 1 : k - 1;
+            const prevX = get(prevK);
+            const prevY = prevX - prevK;
+            while (x > prevX && y > prevY) {
+                ops.push(['equal', x - 1, y - 1]);
+                x--;
+                y--;
+            }
+            if (d > 0) {
+                if (x === prevX) {
+                    ops.push(['add', -1, y - 1]);
+                    y--;
                 } else {
-                    dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+                    ops.push(['remove', x - 1, -1]);
+                    x--;
                 }
             }
         }
+        return ops.reverse();
+    }
 
-        const result = [];
-        let i = m;
-        let j = n;
-        while (i > 0 || j > 0) {
-            if (i > 0 && j > 0 && normalize(linesA[i - 1]) === normalize(linesB[j - 1])) {
-                result.push({ type: 'equal', line: linesA[i - 1], lineA: i, lineB: j });
-                i--;
-                j--;
-            } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
-                result.push({ type: 'add', line: linesB[j - 1], lineA: null, lineB: j });
-                j--;
-            } else {
-                result.push({ type: 'remove', line: linesA[i - 1], lineA: i, lineB: null });
-                i--;
+    function computeLCSDiff(linesA, linesB, normalize) {
+        const ids = new Map();
+        const toId = (line) => {
+            const key = normalize(line);
+            let id = ids.get(key);
+            if (id === undefined) {
+                id = ids.size;
+                ids.set(key, id);
             }
+            return id;
+        };
+        const a = linesA.map(toId);
+        const b = linesB.map(toId);
+
+        let start = 0;
+        while (start < a.length && start < b.length && a[start] === b[start]) start++;
+        let endA = a.length;
+        let endB = b.length;
+        while (endA > start && endB > start && a[endA - 1] === b[endB - 1]) {
+            endA--;
+            endB--;
         }
 
-        return result.reverse();
+        const result = [];
+        const pushEqual = (i, j) => result.push({ type: 'equal', line: linesA[i], lineA: i + 1, lineB: j + 1 });
+
+        for (let i = 0; i < start; i++) pushEqual(i, i);
+
+        const ops = myersDiff(a.slice(start, endA), b.slice(start, endB), MAX_EDIT_DISTANCE);
+        if (ops) {
+            ops.forEach(([kind, i, j]) => {
+                if (kind === 'equal') pushEqual(start + i, start + j);
+                else if (kind === 'remove') result.push({ type: 'remove', line: linesA[start + i], lineA: start + i + 1, lineB: null });
+                else result.push({ type: 'add', line: linesB[start + j], lineA: null, lineB: start + j + 1 });
+            });
+        } else {
+            for (let i = start; i < endA; i++) result.push({ type: 'remove', line: linesA[i], lineA: i + 1, lineB: null });
+            for (let j = start; j < endB; j++) result.push({ type: 'add', line: linesB[j], lineA: null, lineB: j + 1 });
+        }
+
+        for (let i = endA, j = endB; i < a.length; i++, j++) pushEqual(i, j);
+        return result;
     }
 
     function buildSideBySideRows(diff) {
@@ -72,6 +143,55 @@ const DiffLines = (function () {
         return rows;
     }
 
+    function tokenize(line) {
+        return String(line).match(/\s+|[\p{L}\p{N}_$]+|[^\s\p{L}\p{N}_$]/gu) || [''];
+    }
+
+    const WORD_DIFF_MAX_CELLS = 40000;
+    const WORD_DIFF_TOTAL_BUDGET = 4000000;
+
+    // Word-level LCS for a modified line pair. Returns token arrays for each side.
+    function computeWordDiff(lineA, lineB) {
+        const a = tokenize(lineA);
+        const b = tokenize(lineB);
+        const m = a.length;
+        const n = b.length;
+        // Cap the DP table so one very long line cannot stall the UI.
+        if (m * n > WORD_DIFF_MAX_CELLS) {
+            return null;
+        }
+        const dp = Array.from({ length: m + 1 }, () => new Uint16Array(n + 1));
+        for (let i = 1; i <= m; i++) {
+            for (let j = 1; j <= n; j++) {
+                if (a[i - 1] === b[j - 1]) dp[i][j] = dp[i - 1][j - 1] + 1;
+                else dp[i][j] = Math.max(dp[i - 1][j], dp[i][j - 1]);
+            }
+        }
+        const tokensA = [];
+        const tokensB = [];
+        let i = m;
+        let j = n;
+        const stackA = [];
+        const stackB = [];
+        while (i > 0 || j > 0) {
+            if (i > 0 && j > 0 && a[i - 1] === b[j - 1]) {
+                stackA.push({ text: a[i - 1], type: 'eq' });
+                stackB.push({ text: b[j - 1], type: 'eq' });
+                i--;
+                j--;
+            } else if (j > 0 && (i === 0 || dp[i][j - 1] >= dp[i - 1][j])) {
+                stackB.push({ text: b[j - 1], type: 'add' });
+                j--;
+            } else {
+                stackA.push({ text: a[i - 1], type: 'del' });
+                i--;
+            }
+        }
+        while (stackA.length) tokensA.push(stackA.pop());
+        while (stackB.length) tokensB.push(stackB.pop());
+        return { tokensA, tokensB };
+    }
+
     function computeLineDiff(linesA, linesB, options = {}) {
         const ignoreWhitespace = options.ignoreWhitespace || false;
         const ignoreCase = options.ignoreCase || false;
@@ -88,10 +208,13 @@ const DiffLines = (function () {
 
         const statusA = new Array(linesA.length).fill('equal');
         const statusB = new Array(linesB.length).fill('equal');
+        const wordsA = new Array(linesA.length).fill(null);
+        const wordsB = new Array(linesB.length).fill(null);
         let added = 0;
         let removed = 0;
         let modified = 0;
         let unchanged = 0;
+        let wordBudget = WORD_DIFF_TOTAL_BUDGET;
 
         for (const row of rows) {
             if (row.type === 'equal') {
@@ -106,6 +229,16 @@ const DiffLines = (function () {
                 modified++;
                 if (row.lineA != null) statusA[row.lineA - 1] = 'mod';
                 if (row.lineB != null) statusB[row.lineB - 1] = 'mod';
+                if (row.lineA != null && row.lineB != null && wordBudget > 0) {
+                    const lineA = linesA[row.lineA - 1];
+                    const lineB = linesB[row.lineB - 1];
+                    wordBudget -= (lineA.length + 1) * (lineB.length + 1);
+                    const wd = computeWordDiff(lineA, lineB);
+                    if (wd) {
+                        wordsA[row.lineA - 1] = wd.tokensA;
+                        wordsB[row.lineB - 1] = wd.tokensB;
+                    }
+                }
             }
         }
 
@@ -113,25 +246,10 @@ const DiffLines = (function () {
             rows,
             statusA,
             statusB,
+            wordsA,
+            wordsB,
             stats: { added, removed, modified, unchanged }
         };
-    }
-
-    function renderOverlay(gutterId, backdropId, lineCount, status) {
-        const gutter = document.getElementById(gutterId);
-        const backdrop = document.getElementById(backdropId);
-        if (!gutter || !backdrop) return;
-
-        const gutterHtml = [];
-        const backdropHtml = [];
-        for (let i = 0; i < lineCount; i++) {
-            const state = status[i] || 'equal';
-            const cls = state !== 'equal' ? ` ${state}` : '';
-            gutterHtml.push(`<div class="cdiff-gutter-line${cls}">${i + 1}</div>`);
-            backdropHtml.push(`<div class="cdiff-backdrop-line${cls}"></div>`);
-        }
-        gutter.innerHTML = gutterHtml.join('');
-        backdrop.innerHTML = backdropHtml.join('');
     }
 
     function buildHunks(status, side) {
@@ -163,13 +281,27 @@ const DiffLines = (function () {
         );
     }
 
+    function truncateLines(lines, max) {
+        const limit = max || MAX_LINES;
+        if (lines.length <= limit) {
+            return { lines, truncated: false, originalCount: lines.length };
+        }
+        return {
+            lines: lines.slice(0, limit),
+            truncated: true,
+            originalCount: lines.length
+        };
+    }
+
     return {
+        MAX_LINES,
         computeLCSDiff,
         buildSideBySideRows,
         computeLineDiff,
-        renderOverlay,
+        computeWordDiff,
         buildHunks,
         mergeHunks,
-        formatStatsHtml
+        formatStatsHtml,
+        truncateLines
     };
 })();

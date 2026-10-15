@@ -772,6 +772,7 @@
             const btn = document.getElementById('jsonCopyBtn');
             btn?.classList.add('copied');
             setTimeout(() => btn?.classList.remove('copied'), 600);
+            if (ctx.showToast) ctx.showToast(isExpandEscapedEnabled() ? '已复制标准 JSON' : '已复制');
             if (isExpandEscapedEnabled()) {
                 ctx.setStatus('已复制标准 JSON', 'success');
             }
@@ -859,7 +860,8 @@
         const editorA = editorManager.get('jsonCompareA');
         const editorB = editorManager.get('jsonCompareB');
 
-        if (!textA.trim() && !textB.trim()) {
+        // An empty side parses as JSON null; comparing would write "null" into that editor.
+        if (!textA.trim() || !textB.trim()) {
             clearCompareEditorDiff();
             if (errorEl) errorEl.textContent = '';
             return { ok: true, empty: true };
@@ -940,6 +942,7 @@
 
         if (inline.empty) {
             if (statsEl) statsEl.textContent = '';
+            ctx.setStatus(textA.trim() ? '请输入 JSON B 后开始对比' : '请输入 JSON A 后开始对比', 'ready');
             return;
         }
 

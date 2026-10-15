@@ -18,28 +18,26 @@ An offline workbench that helps developers convert schemas, preview Markdown, an
 
 ### 中文
 
-DevKit Pro 是一款在浏览器中本地运行的开发者工作台。你可以在同一界面里完成结构转换、文档预览和日常编码辅助，无需把内容上传到远端服务器。
+DevKit Pro 是一款在浏览器中本地运行的开发者工作台。单一用途是：在本机完成结构/代码转换、文档预览，以及与之配套的日常编码辅助，无需把内容上传到远端服务器。
 
-主要功能包括：
+主要能力包括：
 
-把数据库表结构或 JSON 转成 Go 结构体与 Protocol Buffer 定义。  
-对比两份 DDL，并生成可用的 ALTER 语句。  
+把数据库表结构或 JSON 转成 Go 结构体、Protocol Buffer 定义与 TypeScript 类型。  
 实时预览 Markdown，支持图表与数学公式，也可导出图片或 PDF。  
-格式化与对比 JSON，并提供时间戳、编解码、哈希、正则等常用小工具。  
-在本地处理图片与音视频相关任务。
+格式化与对比 JSON，并提供时间戳、编解码、哈希、正则、本地密码生成等编码小工具。  
+本地开发辅助：图片与媒体预览、导出与媒体元信息查看（均在本机处理）。
 
 隐私说明：输入内容仅在本机处理。更多细节见隐私政策。  
 开源地址：https://github.com/egret135/DevKit-Pro
-
+  
 ### English
 
-DevKit Pro is a developer workbench that runs entirely in your browser. It helps you convert data structures, preview documents, and finish everyday coding chores without sending your content to a remote server.
+DevKit Pro is a single offline developer workbench that runs entirely in your browser. Its purpose is on-device schema/code conversion, document preview, and related coding utilities—without sending your content to a remote server.
 
-You can turn database schemas or JSON into Go structs and Protocol Buffer definitions.  
-You can compare two DDL drafts and generate ALTER statements.  
+You can turn database schemas or JSON into Go structs, Protocol Buffer definitions, and TypeScript types.  
 You can preview Markdown with diagrams and math, then export images or PDF.  
-You can format and compare JSON, and use small utilities such as timestamp conversion, encoding helpers, hashing, and regex testing.  
-Image and media helpers also run locally on your device.
+You can format and compare JSON, and use small utilities such as timestamp conversion, encoding helpers, hashing, regex testing, and local password generation.  
+Image and media helpers (preview, export, media metadata) also run locally as part of the same workbench.
 
 Privacy: your inputs stay on your device. See the privacy policy for details.  
 Open source: https://github.com/egret135/DevKit-Pro
@@ -58,7 +56,10 @@ Developer Tools
 ## 权限说明（Dashboard → Privacy practices / 单一用途说明）
 
 **Single purpose（单一用途）：**
-Provide an offline developer workbench for local schema conversion, document preview, and common coding utilities.
+
+```
+Provide a single offline developer workbench that runs entirely on-device for schema/code conversion, document preview, and related coding utilities.
+```
 
 **Permission justifications：**
 
@@ -76,4 +77,10 @@ Provide an offline developer workbench for local schema conversion, document pre
 
 ## 隐私政策 URL
 
-`https://cdn.jsdelivr.net/gh/egret135/DevKit-Pro@main/docs/privacy-policy.html`
+先启用 GitHub Pages（Settings → Pages → Source: Deploy from a branch → Branch `main` → Folder `/docs`），再填：
+
+`https://egret135.github.io/DevKit-Pro/privacy-policy.html`
+
+（勿再用 jsDelivr：该 CDN 对此路径返回 `text/plain`，不利于审核打开。）
+
+启用前可临时用仓库内文件自检：打开本地 `docs/privacy-policy.html`。Push 到 `main` 并打开 Pages 后，用浏览器确认响应头为 `Content-Type: text/html`。

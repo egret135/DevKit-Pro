@@ -33,21 +33,61 @@ zip -r "$ZIP_PATH" . \
   -x "test.html" \
   -x "test-protobuf.html" \
   -x "test/*" \
-  -x "tests/*"
+  -x "tests/*" \
+  -x "popup.html" \
+  -x "popup.js" \
+  -x "popup.css" \
+  -x "go/*" \
+  -x "go" \
+  -x "main.go"
 
 echo "Created: ${ZIP_PATH}"
 python3 - <<PY
 import json, sys, zipfile
 ver = json.load(open("manifest.json"))["version"]
 zp = f"dist/DevKit-Pro-{ver}.zip"
+import re
+remote = re.compile(
+    r"https?://(?:cdnjs\.cloudflare\.com|unpkg\.com|cdn\.jsdelivr\.net|fonts\.googleapis\.com|fonts\.gstatic\.com)\S{0,200}?\.(?:js|mjs|css|wasm)",
+    re.I,
+)
+script_src = re.compile(r"""<script[^>]+src=["']https?://""", re.I)
 with zipfile.ZipFile(zp) as z:
     names = z.namelist()
-assert "manifest.json" in names, "manifest.json must be at zip root"
-bad = [n for n in names if n.startswith(("store/", "docs/", ".git/", "scripts/")) or n in ("test.html", "test-protobuf.html")]
-if bad:
-    print("Unexpected entries:", bad)
-    sys.exit(1)
-print(f"Verified: {len(names)} files, manifest at root")
+    assert "manifest.json" in names, "manifest.json must be at zip root"
+    banned_prefixes = ("store/", "docs/", ".git/", "scripts/", "go/")
+    banned_exact = {
+        "test.html",
+        "test-protobuf.html",
+        "popup.html",
+        "popup.js",
+        "popup.css",
+        "main.go",
+        "LICENSE",
+    }
+    bad = [
+        n for n in names
+        if n.startswith(banned_prefixes) or n in banned_exact or n.endswith(".md")
+    ]
+    if bad:
+        print("Unexpected entries:", bad)
+        sys.exit(1)
+    print(f"Verified: {len(names)} files, manifest at root")
+    hits = []
+    for name in names:
+        if name.endswith("/"):
+            continue
+        text = z.read(name).decode("utf-8", errors="ignore")
+        for m in remote.findall(text):
+            hits.append(f"{name}: {m[:180]}")
+        if script_src.search(text):
+            hits.append(name + ': remote script src')
+    if hits:
+        print("Remotely hosted code detected:")
+        for h in hits[:30]:
+            print(" ", h)
+        sys.exit(1)
+    print("Remote executable URL scan: clean")
 PY
 SIZE="$(du -h "$ZIP_PATH" | cut -f1)"
 echo "Size: ${SIZE}"

@@ -5,6 +5,44 @@
     'use strict';
     const DevKit = window.DevKit = window.DevKit || {};
 
+    const MODE_META = {
+        converter: { title: '结构转换', subtitle: '把 DDL 或 JSON 转成 Go / Protobuf / TypeScript' },
+        markdown: { title: 'Markdown', subtitle: 'Markdown、公式与图表，本地渲染与导出' },
+        json: { title: 'JSON 工具', subtitle: '格式化、压缩，以及结构对比' },
+        timestamp: { title: '时间戳', subtitle: 'Unix 时间戳转换、翻页时钟与多时区' },
+        toolbox: { title: '小工具', subtitle: '编解码、哈希、ID 生成与常用文本工具' },
+        image: { title: '图片工具', subtitle: '压缩、裁剪、二维码与本地图像处理' },
+        media: { title: '音视频工具', subtitle: '剪辑、转码、抽帧与媒体信息' }
+    };
+
+    const SAMPLES = {
+        converter: `CREATE TABLE users (
+  id BIGINT UNSIGNED NOT NULL AUTO_INCREMENT COMMENT '用户ID',
+  username VARCHAR(100) NOT NULL COMMENT '用户名',
+  email VARCHAR(255) DEFAULT NULL COMMENT '邮箱',
+  created_at DATETIME DEFAULT CURRENT_TIMESTAMP COMMENT '创建时间',
+  PRIMARY KEY (id),
+  UNIQUE KEY uk_username (username)
+) COMMENT='用户表';`,
+        markdown: `# DevKit Pro
+
+本地开发者工作台。
+
+$$ E = mc^2 $$
+
+\`\`\`mermaid
+flowchart LR
+  A[粘贴] --> B[转换]
+  B --> C[复制]
+\`\`\`
+`,
+        json: `{
+  "name": "DevKit Pro",
+  "version": 1,
+  "features": ["converter", "markdown", "json"]
+}`
+    };
+
     // DOM Elements
     const elements = {
         // Converter Elements
@@ -39,28 +77,31 @@
         goStructOptions: document.getElementById('goStructOptions'),
         configFormatLabels: document.querySelectorAll('.config-format'),
 
-        // Diff Elements
-        diffTargetInput: document.getElementById('diffTargetInput'),
-        diffSourceInput: document.getElementById('diffSourceInput'),
-        diffOutputArea: document.getElementById('diffOutputArea'),
-        copyDiffBtn: document.getElementById('copyDiffBtn'),
-        clearDiffBtn: document.getElementById('clearDiffBtn'),
-
         // Mode Switcher
         modeConverter: document.getElementById('modeConverter'),
-        modeDiff: document.getElementById('modeDiff'),
         modeMarkdown: document.getElementById('modeMarkdown'),
         modeJson: document.getElementById('modeJson'),
+        modeTimestamp: document.getElementById('modeTimestamp'),
         modeToolbox: document.getElementById('modeToolbox'),
         modeImage: document.getElementById('modeImage'),
         modeMedia: document.getElementById('modeMedia'),
         converterWorkspace: document.getElementById('converterWorkspace'),
-        diffWorkspace: document.getElementById('diffWorkspace'),
         markdownWorkspace: document.getElementById('markdownWorkspace'),
         jsonWorkspace: document.getElementById('jsonWorkspace'),
+        timestampWorkspace: document.getElementById('timestampWorkspace'),
         toolboxWorkspace: document.getElementById('toolboxWorkspace'),
         imageWorkspace: document.getElementById('imageWorkspace'),
         mediaWorkspace: document.getElementById('mediaWorkspace'),
+
+        // Shell
+        appRoot: document.querySelector('.app'),
+        appNav: document.getElementById('appNav'),
+        navCollapseBtn: document.getElementById('navCollapseBtn'),
+        navBrandToggle: document.getElementById('navBrandToggle'),
+        modeTitle: document.getElementById('modeTitle'),
+        modeSubtitle: document.getElementById('modeSubtitle'),
+        appToast: document.getElementById('appToast'),
+        onboardingOverlay: document.getElementById('onboardingOverlay'),
 
         // Markdown Elements
         markdownInput: document.getElementById('markdownInput'),
@@ -92,6 +133,8 @@
     // Shared State
     let currentSettings = null;
     let currentMode = 'converter';
+    let toastTimer = null;
+    let onboardingStep = 0;
 
     // ==================== Shared Utilities ====================
 
@@ -128,12 +171,43 @@
         }
     }
 
+    function showToast(message, duration = 1800) {
+        const toast = elements.appToast;
+        if (!toast || !message) return;
+        toast.hidden = false;
+        toast.textContent = message;
+        requestAnimationFrame(() => toast.classList.add('is-visible'));
+        clearTimeout(toastTimer);
+        toastTimer = setTimeout(() => {
+            toast.classList.remove('is-visible');
+            setTimeout(() => { toast.hidden = true; }, 200);
+        }, duration);
+    }
+
     function showModal(show) {
         if (show) {
             elements.settingsModal.classList.remove('hidden');
+            elements.settingsModal.classList.add('is-open');
         } else {
+            elements.settingsModal.classList.remove('is-open');
             elements.settingsModal.classList.add('hidden');
         }
+    }
+
+    function updateModeChrome(mode) {
+        const meta = MODE_META[mode] || MODE_META.converter;
+        if (elements.modeTitle) elements.modeTitle.textContent = meta.title;
+        if (elements.modeSubtitle) elements.modeSubtitle.textContent = meta.subtitle;
+    }
+
+    function setNavCollapsed(collapsed) {
+        if (!elements.appRoot) return;
+        elements.appRoot.classList.toggle('nav-collapsed', !!collapsed);
+        [elements.navCollapseBtn, elements.navBrandToggle].forEach(btn => {
+            if (!btn) return;
+            btn.setAttribute('aria-expanded', collapsed ? 'false' : 'true');
+            btn.title = collapsed ? '展开侧栏' : '折叠侧栏';
+        });
     }
 
     // ==================== Controller Context ====================
@@ -144,11 +218,107 @@
             getSettings: () => currentSettings,
             setSettings: (s) => { currentSettings = s; },
             setStatus,
+            showToast,
             debounce,
             snakeToCamel,
             refreshEditorsIn,
             switchMode
         };
+    }
+
+    // ==================== Empty states ====================
+
+    function syncEmptyState(editorId, emptyEl) {
+        if (!emptyEl) return;
+        const value = (editorManager.getValue(editorId) || '').trim();
+        emptyEl.classList.toggle('is-hidden', value.length > 0);
+    }
+
+    function initEmptyStates() {
+        const pairs = [
+            ['inputArea', document.getElementById('converterEmptyState')],
+            ['markdownInput', document.getElementById('markdownEmptyState')],
+            ['jsonFormatInput', document.getElementById('jsonEmptyState')]
+        ];
+
+        pairs.forEach(([id, el]) => {
+            if (!el) return;
+            syncEmptyState(id, el);
+            const cm = editorManager.get(id);
+            if (cm) {
+                cm.on('change', () => syncEmptyState(id, el));
+            }
+        });
+
+        document.querySelectorAll('.empty-state-action').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                const kind = btn.getAttribute('data-sample');
+                const sample = SAMPLES[kind];
+                if (!sample) return;
+                if (kind === 'converter') {
+                    editorManager.setValue('inputArea', sample);
+                    syncEmptyState('inputArea', document.getElementById('converterEmptyState'));
+                    if (DevKit.ConverterController && DevKit.ConverterController.handleConvert) {
+                        DevKit.ConverterController.handleConvert();
+                    }
+                } else if (kind === 'markdown') {
+                    editorManager.setValue('markdownInput', sample);
+                    syncEmptyState('markdownInput', document.getElementById('markdownEmptyState'));
+                } else if (kind === 'json') {
+                    editorManager.setValue('jsonFormatInput', sample);
+                    syncEmptyState('jsonFormatInput', document.getElementById('jsonEmptyState'));
+                    if (DevKit.JsonController && DevKit.JsonController.handleFormat) {
+                        DevKit.JsonController.handleFormat();
+                    }
+                }
+                showToast('已填入示例');
+            });
+        });
+    }
+
+    // ==================== Onboarding ====================
+
+    function renderOnboardingStep() {
+        const overlay = elements.onboardingOverlay;
+        if (!overlay) return;
+        overlay.querySelectorAll('.onboarding-step').forEach((step) => {
+            step.classList.toggle('is-active', Number(step.dataset.step) === onboardingStep);
+        });
+        overlay.querySelectorAll('.onboarding-dots span').forEach((dot, i) => {
+            dot.classList.toggle('is-active', i === onboardingStep);
+        });
+        const nextBtn = document.getElementById('onboardingNext');
+        if (nextBtn) nextBtn.textContent = onboardingStep >= 2 ? '开始使用' : '下一步';
+    }
+
+    async function finishOnboarding() {
+        const overlay = elements.onboardingOverlay;
+        if (overlay) {
+            overlay.classList.remove('is-open');
+            overlay.classList.add('hidden');
+        }
+        currentSettings.onboardingDone = true;
+        await Settings.set('onboardingDone', true);
+    }
+
+    function initOnboarding() {
+        const overlay = elements.onboardingOverlay;
+        if (!overlay || currentSettings.onboardingDone) return;
+
+        onboardingStep = 0;
+        overlay.classList.remove('hidden');
+        overlay.classList.add('is-open');
+        renderOnboardingStep();
+
+        document.getElementById('onboardingSkip')?.addEventListener('click', () => finishOnboarding());
+        document.getElementById('onboardingNext')?.addEventListener('click', async () => {
+            if (onboardingStep >= 2) {
+                await finishOnboarding();
+                return;
+            }
+            onboardingStep += 1;
+            renderOnboardingStep();
+        });
     }
 
     // ==================== Mode Switching ====================
@@ -157,65 +327,60 @@
         currentMode = mode;
         currentSettings.lastMode = mode;
         // Use Settings.set (load-modify-save) rather than saving the whole
-        // currentSettings snapshot: other panels (e.g. the Toolbox timestamp
-        // tool) persist their own keys independently, and this runs on every
+        // currentSettings snapshot: other panels (e.g. the timestamp tool)
+        // persist their own keys independently, and this runs on every
         // tab switch, so a full-object save here would clobber those changes
         // with the stale snapshot captured at app startup.
         await Settings.set('lastMode', mode);
 
         elements.modeConverter.classList.remove('active');
-        elements.modeDiff.classList.remove('active');
         elements.modeMarkdown.classList.remove('active');
         if (elements.modeJson) elements.modeJson.classList.remove('active');
+        if (elements.modeTimestamp) elements.modeTimestamp.classList.remove('active');
         if (elements.modeToolbox) elements.modeToolbox.classList.remove('active');
         if (elements.modeImage) elements.modeImage.classList.remove('active');
         if (elements.modeMedia) elements.modeMedia.classList.remove('active');
         elements.converterWorkspace.classList.add('hidden');
-        elements.diffWorkspace.classList.add('hidden');
         elements.markdownWorkspace.classList.add('hidden');
         if (elements.jsonWorkspace) elements.jsonWorkspace.classList.add('hidden');
+        if (elements.timestampWorkspace) elements.timestampWorkspace.classList.add('hidden');
         if (elements.toolboxWorkspace) elements.toolboxWorkspace.classList.add('hidden');
         if (elements.imageWorkspace) elements.imageWorkspace.classList.add('hidden');
         if (elements.mediaWorkspace) elements.mediaWorkspace.classList.add('hidden');
 
+        updateModeChrome(mode);
+
         if (mode === 'converter') {
             elements.modeConverter.classList.add('active');
             elements.converterWorkspace.classList.remove('hidden');
-            elements.converterOptions.style.visibility = 'visible';
             refreshEditorsIn('inputArea', 'outputArea');
             setStatus('转换模式', 'ready');
-        } else if (mode === 'diff') {
-            elements.modeDiff.classList.add('active');
-            elements.diffWorkspace.classList.remove('hidden');
-            elements.converterOptions.style.visibility = 'hidden';
-            refreshEditorsIn('diffTargetInput', 'diffSourceInput', 'diffOutputArea');
-            setStatus('DDL 对比模式', 'ready');
         } else if (mode === 'markdown') {
             elements.modeMarkdown.classList.add('active');
             elements.markdownWorkspace.classList.remove('hidden');
-            elements.converterOptions.style.visibility = 'hidden';
             refreshEditorsIn('markdownInput');
             setStatus('Markdown 预览模式', 'ready');
         } else if (mode === 'json') {
             elements.modeJson.classList.add('active');
             elements.jsonWorkspace.classList.remove('hidden');
-            elements.converterOptions.style.visibility = 'hidden';
             refreshEditorsIn('jsonFormatInput', 'jsonFormatOutput', 'jsonCompareA', 'jsonCompareB');
             setStatus('JSON 工具', 'ready');
+        } else if (mode === 'timestamp') {
+            elements.modeTimestamp.classList.add('active');
+            elements.timestampWorkspace.classList.remove('hidden');
+            setStatus('时间戳工具', 'ready');
         } else if (mode === 'toolbox') {
             elements.modeToolbox.classList.add('active');
             elements.toolboxWorkspace.classList.remove('hidden');
-            elements.converterOptions.style.visibility = 'hidden';
+            DevKit.ToolboxController?.onShown?.();
             setStatus('开发者工具箱', 'ready');
         } else if (mode === 'image') {
             elements.modeImage.classList.add('active');
             elements.imageWorkspace.classList.remove('hidden');
-            elements.converterOptions.style.visibility = 'hidden';
             setStatus('图片工具', 'ready');
         } else if (mode === 'media') {
             elements.modeMedia.classList.add('active');
             elements.mediaWorkspace.classList.remove('hidden');
-            elements.converterOptions.style.visibility = 'hidden';
             setStatus('音视频工具', 'ready');
         }
     }
@@ -247,8 +412,12 @@
 
         editorManager.setTheme(currentSettings.editorTheme);
         editorManager.setFont(currentSettings.editorFont);
+        if (DevKit.ConverterController && DevKit.ConverterController.syncSettings) {
+            DevKit.ConverterController.syncSettings();
+        }
 
         setStatus('设置已保存', 'success');
+        showToast('设置已保存');
         showModal(false);
     }
 
@@ -259,7 +428,7 @@
         elements.inlineNestedStructs.checked = currentSettings.inlineNestedStructs !== false;
 
         elements.editorTheme.value = currentSettings.editorTheme || 'dracula';
-        elements.editorFont.value = currentSettings.editorFont || "'JetBrains Mono', monospace";
+        elements.editorFont.value = currentSettings.editorFont || "ui-monospace, 'SF Mono', Menlo, Consolas, monospace";
 
         elements.autoFormat.value = currentSettings.autoFormat || 'always';
         elements.formatIndent.value = currentSettings.formatIndent === 'tab' ? 'tab' : (currentSettings.formatIndent || 4).toString();
@@ -280,6 +449,9 @@
 
         if (e.key === 'Escape') {
             showModal(false);
+            if (elements.onboardingOverlay && !elements.onboardingOverlay.classList.contains('hidden')) {
+                finishOnboarding();
+            }
         }
     }
 
@@ -396,6 +568,7 @@
                 }
 
                 setStatus(`已导入文件: ${file.name}`, 'success');
+                showToast(`已导入 ${file.name}`);
             };
             reader.onerror = () => setStatus('文件读取失败', 'error');
             reader.readAsText(file);
@@ -408,6 +581,7 @@
         // Load settings
         currentSettings = await Settings.load();
         updateSettingsUI();
+        setNavCollapsed(!!currentSettings.navCollapsed);
 
         // Initialize editors
         editorManager.initFromTextArea('inputArea', 'sql', {
@@ -415,18 +589,6 @@
             theme: currentSettings.editorTheme
         });
         editorManager.initFromTextArea('outputArea', 'go', {
-            readOnly: true,
-            theme: currentSettings.editorTheme
-        });
-        editorManager.initFromTextArea('diffTargetInput', 'sql', {
-            placeholder: "粘贴线上环境的 DDL (基准)...",
-            theme: currentSettings.editorTheme
-        });
-        editorManager.initFromTextArea('diffSourceInput', 'sql', {
-            placeholder: "粘贴新开发的 DDL (变更后)...",
-            theme: currentSettings.editorTheme
-        });
-        editorManager.initFromTextArea('diffOutputArea', 'sql', {
             readOnly: true,
             theme: currentSettings.editorTheme
         });
@@ -460,7 +622,6 @@
 
         // Initialize controllers
         if (DevKit.ConverterController) DevKit.ConverterController.init(ctx);
-        if (DevKit.DiffController) DevKit.DiffController.init(ctx);
         if (DevKit.MarkdownController) DevKit.MarkdownController.init(ctx);
         if (DevKit.JsonController) DevKit.JsonController.init(ctx);
         if (DevKit.ToolboxController) DevKit.ToolboxController.init();
@@ -470,16 +631,29 @@
         // Shared event listeners
         elements.settingsBtn.addEventListener('click', () => showModal(true));
         elements.closeModal.addEventListener('click', () => showModal(false));
+        elements.settingsModal.querySelector('.modal-overlay')?.addEventListener('click', () => showModal(false));
         elements.saveSettings.addEventListener('click', handleSaveSettings);
 
-        // Mode switcher
-        elements.modeConverter.addEventListener('click', () => switchMode('converter'));
-        elements.modeDiff.addEventListener('click', () => switchMode('diff'));
-        elements.modeMarkdown.addEventListener('click', () => switchMode('markdown'));
-        elements.modeJson.addEventListener('click', () => switchMode('json'));
-        elements.modeToolbox.addEventListener('click', () => switchMode('toolbox'));
-        elements.modeImage.addEventListener('click', () => switchMode('image'));
-        elements.modeMedia.addEventListener('click', () => switchMode('media'));
+        // Mode switcher (sidebar)
+        const bindMode = (el, mode) => {
+            if (el) el.addEventListener('click', () => switchMode(mode));
+        };
+        bindMode(elements.modeConverter, 'converter');
+        bindMode(elements.modeMarkdown, 'markdown');
+        bindMode(elements.modeJson, 'json');
+        bindMode(elements.modeTimestamp, 'timestamp');
+        bindMode(elements.modeToolbox, 'toolbox');
+        bindMode(elements.modeImage, 'image');
+        bindMode(elements.modeMedia, 'media');
+
+        const toggleNav = async () => {
+            const next = !elements.appRoot.classList.contains('nav-collapsed');
+            setNavCollapsed(next);
+            currentSettings.navCollapsed = next;
+            await Settings.set('navCollapsed', next);
+        };
+        elements.navCollapseBtn?.addEventListener('click', toggleNav);
+        elements.navBrandToggle?.addEventListener('click', toggleNav);
 
         // Appearance instant preview
         elements.editorTheme.addEventListener('change', () => {
@@ -495,11 +669,18 @@
         // File drag & drop
         initFileDrop();
 
+        // Empty states + onboarding
+        initEmptyStates();
+        initOnboarding();
+
         // Keyboard shortcuts
         document.addEventListener('keydown', handleKeyboard);
 
         // Restore last used mode
-        const lastMode = currentSettings.lastMode || 'converter';
+        const lastMode = currentSettings.lastMode === 'diff'
+            ? 'converter'
+            : (currentSettings.lastMode || 'converter');
+        updateModeChrome(lastMode === 'converter' ? 'converter' : lastMode);
         if (lastMode !== 'converter') {
             await switchMode(lastMode);
         } else {
@@ -508,7 +689,7 @@
     }
 
     // Export to namespace
-    DevKit.App = { init, setStatus, switchMode };
+    DevKit.App = { init, setStatus, showToast, switchMode };
 
     // Start
     document.addEventListener('DOMContentLoaded', init);

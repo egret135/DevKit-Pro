@@ -13,37 +13,42 @@
 </head>
 <body>
   <h1>DevKit Pro Privacy Policy / 隐私政策</h1>
-  <p><strong>Last updated / 更新日期:</strong> 2026-10-12<br>
+  <p><strong>Last updated / 更新日期:</strong> 2026-10-15<br>
   <strong>Product / 产品:</strong> DevKit Pro (Chrome Extension)<br>
   <strong>Developer / 开发者:</strong> egret135<br>
-  <strong>Contact / 联系:</strong> <a href="https://github.com/egret135/DevKit-Pro/issues">GitHub Issues</a></p>
+  <strong>Contact / 联系:</strong>
+    <a href="https://github.com/egret135/DevKit-Pro/issues">GitHub Issues</a>
+    · publisher email on the
+    <a href="https://chromewebstore.google.com/">Chrome Web Store</a> listing
+    （商店开发者账号邮箱 / the email tied to the Chrome Web Store publisher account）
+  </p>
 
   <h2>English</h2>
   <h3>Overview</h3>
-  <p>DevKit Pro is an offline-first developer toolkit that runs entirely in your browser. It does not operate a backend server for processing your content, and it does not sell or share your data with advertisers.</p>
+  <p>DevKit Pro is a single offline developer workbench that runs entirely in your browser. It does not operate a backend server for processing your content, and it does not sell or share your data with advertisers.</p>
   <h3>Data we store locally</h3>
-  <p>The extension may store the following on your device only:</p>
+  <p>The extension may store the following on your device only. Tool inputs (DDL, JSON, Markdown, images, audio, video, passwords, tokens, etc.) are processed in memory for the active session and are <strong>not</strong> uploaded to our servers.</p>
   <table>
     <tr><th>Data</th><th>Purpose</th><th>Storage</th></tr>
-    <tr><td>Editor preferences (theme, font, indent)</td><td>Remember UI settings</td><td>chrome.storage / localStorage</td></tr>
-    <tr><td>Generation options (package name, TableName)</td><td>Remember converter settings</td><td>chrome.storage / localStorage</td></tr>
-    <tr><td>Draft Markdown text</td><td>Restore unfinished input</td><td>localStorage</td></tr>
+    <tr><td>UI and tool preferences (theme, font, indent, panel options, converter/generator options, media track filters, and similar settings)</td><td>Remember workbench configuration across sessions</td><td>chrome.storage.local and/or chrome.storage.sync, with localStorage as fallback</td></tr>
+    <tr><td>Draft Markdown text</td><td>Restore unfinished document input</td><td>localStorage</td></tr>
   </table>
-  <p>You can clear this data by clearing the extension site data, uninstalling the extension, or using in-app clear actions.</p>
+  <p>If Chrome Sync is enabled for extensions, preference data in <code>chrome.storage.sync</code> may sync across your signed-in Chrome browsers via Google’s sync infrastructure. We do not operate that sync service. You can clear stored data by clearing the extension’s site data, uninstalling the extension, or using in-app clear actions.</p>
   <h3>Data we do not collect</h3>
   <ul>
     <li>We do not upload your DDL, JSON, Markdown, images, audio, video, passwords, tokens, or other tool inputs to our servers.</li>
+    <li>Generated passwords and media files are handled in memory (or saved only when you explicitly download/export to your computer).</li>
     <li>We do not use analytics SDKs, advertising trackers, or third-party tracking pixels.</li>
-    <li>We do not require an account.</li>
+    <li>We do not require an account for the extension itself.</li>
   </ul>
-  <p>Formatting, conversion, preview, export, and hashing happen locally in the browser.</p>
+  <p>Formatting, conversion, preview, export, hashing, and media helpers happen locally in the browser.</p>
   <h3>Permissions</h3>
   <table>
     <tr><th>Permission</th><th>Why</th></tr>
     <tr><td>storage</td><td>Save preferences and options on your device</td></tr>
     <tr><td>downloads</td><td>Save exported files when you choose to download</td></tr>
   </table>
-  <p>Copy uses the browser clipboard API only when you click Copy. The extension does not request the clipboardWrite permission. It does not read browsing history or arbitrary websites.</p>
+  <p>Copy uses the browser clipboard API only when you click Copy. The extension does not request the clipboardWrite permission. It does not read browsing history or arbitrary websites. Optional map links in EXIF results open OpenStreetMap in a normal browser tab when you click them; no location data is sent to us.</p>
   <h3>Third-party libraries</h3>
   <p>Bundled libraries (CodeMirror, Marked, Mermaid, KaTeX, MediaInfo WASM, and others) run locally inside the extension and are not used to send your content elsewhere.</p>
   <h3>Children</h3>
@@ -53,19 +58,21 @@
 
   <h2>中文</h2>
   <h3>概述</h3>
-  <p>DevKit Pro 是一款在浏览器本地运行的开发者工具扩展。我们没有用于处理你内容的后台服务器，也不会向广告商出售或共享你的数据。</p>
+  <p>DevKit Pro 是一款在浏览器本地运行的单一用途开发者工作台扩展。我们没有用于处理你内容的后台服务器，也不会向广告商出售或共享你的数据。</p>
   <h3>本地存储</h3>
+  <p>扩展可能仅在你的设备上保存下列数据。工具输入（DDL、JSON、Markdown、图片、音视频、密码、Token 等）在会话中于内存处理，<strong>不会</strong>上传到我们的服务器。</p>
   <table>
     <tr><th>数据</th><th>用途</th><th>位置</th></tr>
-    <tr><td>编辑器偏好</td><td>记住界面设置</td><td>chrome.storage / localStorage</td></tr>
-    <tr><td>生成选项</td><td>记住转换器配置</td><td>chrome.storage / localStorage</td></tr>
+    <tr><td>界面与工具偏好（主题、字体、缩进、面板选项、转换器/生成器选项、媒体轨筛选等）</td><td>记住工作台配置</td><td>chrome.storage.local 和/或 chrome.storage.sync，必要时回退 localStorage</td></tr>
     <tr><td>Markdown 草稿</td><td>恢复未完成输入</td><td>localStorage</td></tr>
   </table>
+  <p>若你启用了 Chrome 扩展同步，<code>chrome.storage.sync</code> 中的偏好可能经由 Google 的同步机制在你登录的浏览器之间同步；该服务不由我们运营。可通过清除扩展站点数据、卸载扩展或应用内清除操作删除本地数据。</p>
   <h3>我们不收集的内容</h3>
   <ul>
     <li>不会上传 DDL、JSON、Markdown、图片、音视频、密码或 Token。</li>
+    <li>生成的密码与媒体文件仅在内存中处理（或在你主动导出时保存到本机）。</li>
     <li>不使用分析或广告追踪。</li>
-    <li>不需要注册账号。</li>
+    <li>扩展本身不需要注册账号。</li>
   </ul>
   <h3>权限</h3>
   <table>
@@ -73,7 +80,7 @@
     <tr><td>storage</td><td>在本地保存偏好与选项</td></tr>
     <tr><td>downloads</td><td>在你选择导出时保存文件到本机</td></tr>
   </table>
-  <p>复制仅在你点击「复制」时通过浏览器剪贴板完成。扩展不申请 clipboardWrite，也不读取浏览历史或任意网站。</p>
+  <p>复制仅在你点击「复制」时通过浏览器剪贴板完成。扩展不申请 clipboardWrite，也不读取浏览历史或任意网站。EXIF 结果中的地图链接仅在你点击时于普通标签页打开 OpenStreetMap，不会向我们发送位置数据。</p>
   <h3>第三方库</h3>
   <p>打包的开源库均在扩展内本地运行，不会回传你的内容。</p>
   <h3>儿童与变更</h3>

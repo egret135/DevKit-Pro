@@ -1,170 +1,153 @@
 // Protocol Buffer Message Generator
-// Generates .proto file message definitions from parsed JSON data
+// Generates proto3 messages from the unified model (JSON structs or DDL tables)
+
+const PROTO_DDL_INPUTS = ['mysql', 'postgresql', 'sqlite', 'ddl'];
+const PROTO_IMPORTS = {
+    'google.protobuf.Timestamp': 'google/protobuf/timestamp.proto',
+    'google.protobuf.Value': 'google/protobuf/struct.proto',
+    'google.protobuf.ListValue': 'google/protobuf/struct.proto'
+};
+const PROTO_SCALARS = {
+    'string': 'string',
+    'bool': 'bool',
+    'int8': 'int32',
+    'int16': 'int32',
+    'int32': 'int32',
+    'int': 'int32',
+    'int64': 'int64',
+    'uint8': 'uint32',
+    'uint16': 'uint32',
+    'uint32': 'uint32',
+    'uint': 'uint32',
+    'uint64': 'uint64',
+    'float32': 'float',
+    'float64': 'double',
+    'time.Time': 'google.protobuf.Timestamp',
+    'json.RawMessage': 'string',
+    '[]byte': 'bytes',
+    'any': 'google.protobuf.Value',
+    'interface{}': 'google.protobuf.Value'
+};
 
 /**
- * Generate Protocol Buffer message definition
- * @param {object} parsedData - Parsed JSON data from protobuf-parser
- * @param {object} options - Generation options
- * @returns {string} - Protocol Buffer message definition
+ * Generate a .proto definition
+ * @param {object} parsedData - parseJSON / DDL parser result
+ * @param {object} options - { messageName, nestedMode, packageName, syntax, inputType, optionalNullable, decimal }
  */
 function generateProtoMessage(parsedData, options = {}) {
-    const {
-        messageName = parsedData.structName || 'Message',
-        nestedMode = 'separate',  // 'inline' | 'separate'
-        packageName = 'model',
-        syntax = 'proto3',
-        numericIntType = 'int32',
-        numericFloatType = 'float'
-    } = options;
-
-    let code = '';
-
-    // Add syntax declaration
-    code += `syntax = "${syntax}";\n\n`;
-
-    // Add package declaration
-    if (packageName) {
-        code += `package ${packageName};\n\n`;
-    }
-
-    // Generate nested messages first if in separate mode
-    if (nestedMode === 'separate' && parsedData.nestedStructs && parsedData.nestedStructs.length > 0) {
-        for (const nested of parsedData.nestedStructs) {
-            code += generateMessage(nested, { numericIntType, numericFloatType });
-            code += '\n';
-        }
-    }
-
-    // Generate main message
-    code += generateMessage(
-        {
-            name: messageName,
-            fields: parsedData.fields,
-            nestedStructs: nestedMode === 'inline' ? parsedData.nestedStructs : []
-        },
-        { numericIntType, numericFloatType, nestedMode }
-    );
-
-    return code;
-}
-
-/**
- * Generate a single Protocol Buffer message
- * @param {object} messageData - Message data (name, fields, nestedStructs)
- * @param {object} options - Generation options
- * @returns {string} - Message definition
- */
-function generateMessage(messageData, options = {}) {
-    const { name, fields, nestedStructs = [] } = messageData;
-    const { numericIntType = 'int32', numericFloatType = 'float', nestedMode = 'separate' } = options;
-
-    let code = '';
-
-    // Add message comment
-    code += `// ${name} message\n`;
-    code += `message ${name} {\n`;
-
-    // Generate nested messages first if in inline mode
-    if (nestedMode === 'inline' && nestedStructs.length > 0) {
-        for (const nested of nestedStructs) {
-            const nestedCode = generateMessage(nested, { numericIntType, numericFloatType, nestedMode });
-            // Indent nested message
-            const indentedNested = nestedCode.split('\n').map(line => '  ' + line).join('\n');
-            code += indentedNested + '\n';
-        }
-    }
-
-    // Calculate max widths for alignment
-    const protoTypes = fields.map(f => formatFieldType(f, { numericIntType, numericFloatType }));
-    const fieldNames = fields.map(f => f.jsonName || f.name);
-
-    const maxTypeLen = Math.max(...protoTypes.map(t => t.length), 0);
-    const maxNameLen = Math.max(...fieldNames.map(n => n.length), 0);
-
-    // Generate fields
-    for (let i = 0; i < fields.length; i++) {
-        const field = fields[i];
-        const protoType = protoTypes[i].padEnd(maxTypeLen);
-        const fieldName = fieldNames[i].padEnd(maxNameLen);
-        const fieldNumber = field.protoFieldNumber || (i + 1);
-
-        code += `  ${protoType} ${fieldName} = ${fieldNumber};\n`;
-    }
-
-    code += `}\n`;
-
-    return code;
-}
-
-/**
- * Format field type for Protocol Buffer
- * @param {object} field - Field object
- * @param {object} options - Type mapping options
- * @returns {string} - Protocol Buffer type string
- */
-function formatFieldType(field, options = {}) {
-    const { numericIntType = 'int32', numericFloatType = 'float' } = options;
-
-    // Handle repeated fields (arrays)
-    if (field.isRepeated) {
-        const elementType = mapTypeToProtobuf(field.protoElementType, options);
-        return `repeated ${elementType}`;
-    }
-
-    // Handle regular fields
-    return mapTypeToProtobuf(field.goType, options);
-}
-
-/**
- * Map Go type (from json-parser) to Protocol Buffer type
- * @param {string} goType - Go type string
- * @param {object} options - Mapping options
- * @returns {string} - Protocol Buffer type
- */
-function mapTypeToProtobuf(goType, options = {}) {
-    const { numericIntType = 'int32', numericFloatType = 'float' } = options;
-
-    // Direct type mappings
-    const typeMap = {
-        'string': 'string',
-        'int': numericIntType,
-        'int64': 'int64',
-        'int32': 'int32',
-        'float64': numericFloatType,
-        'float32': 'float',
-        'bool': 'bool',
-        'interface{}': 'string', // Fallback for null/unknown types
+    const opts = {
+        messageName: options.messageName || '',
+        nestedMode: options.nestedMode || 'separate',
+        packageName: options.packageName === undefined ? 'model' : options.packageName,
+        syntax: options.syntax || 'proto3',
+        isDDL: options.inputType ? PROTO_DDL_INPUTS.includes(options.inputType) : !!parsedData.tableName,
+        optionalNullable: !!options.optionalNullable,
+        decimal: options.decimal || 'string'
     };
+    const ctx = { opts, imports: new Set() };
 
-    // Check if it's a direct mapping
-    if (typeMap[goType]) {
-        return typeMap[goType];
+    let tables = parsedData.tables && parsedData.tables.length
+        ? parsedData.tables
+        : (parsedData.fields && parsedData.fields.length
+            ? [{ structName: parsedData.structName || GoNaming.toPascal(parsedData.tableName || 'Message'), tableName: parsedData.tableName || '', comment: '', fields: parsedData.fields }]
+            : []);
+    if (opts.messageName && tables.length === 1 && !parsedData.rootAlias && opts.isDDL) {
+        tables = [Object.assign({}, tables[0], { structName: opts.messageName })];
     }
 
-    // If it's a custom type (nested message), return as-is
-    // These are typically PascalCase struct names
-    return goType;
+    const nested = parsedData.nestedStructs || [];
+    const inlineNested = opts.nestedMode === 'inline' && !opts.isDDL;
+    const blocks = [];
+
+    if (parsedData.rootAlias) {
+        const alias = parsedData.rootAlias;
+        const elem = protoTypeOf(alias.elemType, null, ctx);
+        blocks.push(`// ${alias.name} 顶层数组\nmessage ${alias.name} {\n  repeated ${elem.type} items = 1;\n}\n`);
+    }
+
+    tables.forEach((table, index) => {
+        const comment = table.comment || (table.tableName ? `对应表 ${table.tableName}` : '');
+        const inner = inlineNested && index === 0 ? nested : [];
+        blocks.push(renderProtoMessage(table.structName, table.fields, comment, inner, ctx, ''));
+    });
+
+    if (!inlineNested) {
+        for (const n of nested) blocks.push(renderProtoMessage(n.name, n.fields, '', [], ctx, ''));
+    }
+
+    let code = `syntax = "${opts.syntax}";\n\n`;
+    if (opts.packageName) code += `package ${opts.packageName};\n\n`;
+    const imports = Array.from(ctx.imports).sort();
+    if (imports.length) code += imports.map(i => `import "${i}";`).join('\n') + '\n\n';
+    return code + blocks.join('\n');
 }
 
-/**
- * Convert field name to snake_case (Protocol Buffer convention)
- * @param {string} fieldName - Field name
- * @returns {string} - snake_case field name
- */
+// DDL 表集合 -> proto
+function generateProtoFromTables(tables, options = {}) {
+    return generateProtoMessage({ tables, nestedStructs: [] }, Object.assign({ inputType: 'ddl' }, options));
+}
+
+function renderProtoMessage(name, fields, comment, nestedList, ctx, indent) {
+    let code = '';
+    if (comment) code += `${indent}// ${String(comment).replace(/\s*[\r\n]+\s*/g, ' ')}\n`;
+    code += `${indent}message ${name} {\n`;
+
+    for (const n of nestedList) {
+        code += renderProtoMessage(n.name, n.fields, '', [], ctx, indent + '  ') + '\n';
+    }
+
+    const usedNames = new Set();
+    const rows = fields.map((field, i) => {
+        const mapped = protoTypeOf(field.goBaseType || field.goType, field, ctx);
+        let label = '';
+        if (mapped.repeated) label = 'repeated ';
+        else if (ctx.opts.optionalNullable && (field.nullable || field.optional) && !field.isPrimaryKey) label = 'optional ';
+        return {
+            type: label + mapped.type,
+            name: GoNaming.unique(GoNaming.toSnake(field.jsonName || field.name), usedNames),
+            number: i + 1,
+            comment: field.comment ? ` // ${String(field.comment).replace(/\s*[\r\n]+\s*/g, ' ')}` : ''
+        };
+    });
+    const typeWidth = Math.max(0, ...rows.map(r => r.type.length));
+    const nameWidth = Math.max(0, ...rows.map(r => r.name.length));
+    for (const r of rows) {
+        const decl = `${r.type.padEnd(typeWidth)} ${r.name.padEnd(nameWidth)} = ${r.number};`;
+        code += `${indent}  ${decl}${r.comment}\n`;
+    }
+    code += `${indent}}\n`;
+    return code;
+}
+
+function isDecimalField(field) {
+    return !!field && /^(DECIMAL|NUMERIC|DEC|FIXED|MONEY)\b/i.test(field.baseType || field.sqlType || '');
+}
+
+// Go 类型 -> { type, repeated }
+function protoTypeOf(goType, field, ctx) {
+    let t = String(goType || 'any');
+    let repeated = false;
+    if (t.startsWith('[]') && t !== '[]byte') {
+        repeated = true;
+        t = t.slice(2);
+        if (t.startsWith('[]') && t !== '[]byte') t = 'google.protobuf.ListValue';
+    }
+    let mapped;
+    if (t === 'float64' && ctx.opts.decimal === 'string' && isDecimalField(field)) mapped = 'string';
+    else mapped = PROTO_SCALARS[t] || t;
+    if (PROTO_IMPORTS[mapped]) ctx.imports.add(PROTO_IMPORTS[mapped]);
+    return { type: mapped, repeated };
+}
+
+// Map Go type to Protocol Buffer type (kept for compatibility)
+function mapTypeToProtobuf(goType) {
+    return PROTO_SCALARS[goType] || goType;
+}
+
 function toSnakeCase(fieldName) {
-    return fieldName
-        .replace(/([A-Z])/g, '_$1')
-        .toLowerCase()
-        .replace(/^_/, '');
+    return GoNaming.toSnake(fieldName);
 }
 
-// Export for use in other modules
 if (typeof module !== 'undefined' && module.exports) {
-    module.exports = {
-        generateProtoMessage,
-        generateMessage,
-        formatFieldType,
-        mapTypeToProtobuf,
-        toSnakeCase
-    };
+    module.exports = { generateProtoMessage, generateProtoFromTables, mapTypeToProtobuf, toSnakeCase };
 }

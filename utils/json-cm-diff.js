@@ -1,6 +1,6 @@
-// CodeMirror inline diff — line highlights, gutter, linked scroll
+// CodeMirror inline diff — line highlights, gutter, word marks, linked scroll (shared by JSON and Code Diff)
 
-const JsonCmDiff = (function () {
+const CmDiff = (function () {
     'use strict';
 
     const editorState = new WeakMap();
@@ -9,10 +9,20 @@ const JsonCmDiff = (function () {
         add: 'json-cm-line-add',
         mod: 'json-cm-line-mod'
     };
+    const GUTTER_CLASS = {
+        del: 'json-cm-gutter-del',
+        add: 'json-cm-gutter-add',
+        mod: 'json-cm-gutter-mod'
+    };
+    const WORD_CLASS = {
+        del: 'cm-diff-word-del',
+        add: 'cm-diff-word-add'
+    };
+    const FLASH_CLASS = 'cm-diff-flash';
 
     function getState(editor) {
         if (!editorState.has(editor)) {
-            editorState.set(editor, { lines: [], classByLine: {} });
+            editorState.set(editor, { lines: [], classByLine: {}, marks: [], flash: null });
         }
         return editorState.get(editor);
     }
@@ -22,12 +32,35 @@ const JsonCmDiff = (function () {
         return editor.defaultTextHeight?.() || 20;
     }
 
+    function clearWordMarks(editor) {
+        if (!editor) return;
+        const state = getState(editor);
+        state.marks.forEach((m) => m.clear());
+        state.marks = [];
+    }
+
+    function clearFlash(editor) {
+        if (!editor) return;
+        const state = getState(editor);
+        if (state.flash) {
+            clearTimeout(state.flash.timer);
+            editor.removeLineClass(state.flash.handle, 'background', FLASH_CLASS);
+            state.flash = null;
+        }
+    }
+
     function clearEditor(editor) {
         if (!editor) return;
         const state = getState(editor);
-        state.lines.forEach((line) => {
-            const cls = state.classByLine[line];
-            if (cls) editor.removeLineClass(line, 'background', cls);
+        editor.operation(() => {
+            state.lines.forEach((line) => {
+                const kind = state.classByLine[line];
+                if (!kind) return;
+                editor.removeLineClass(line, 'background', LINE_CLASS[kind]);
+                editor.removeLineClass(line, 'gutter', GUTTER_CLASS[kind]);
+            });
+            clearWordMarks(editor);
+            clearFlash(editor);
         });
         state.lines = [];
         state.classByLine = {};
@@ -40,13 +73,58 @@ const JsonCmDiff = (function () {
         const state = getState(editor);
         const limit = Math.min(status.length, editor.lineCount());
 
-        for (let i = 0; i < limit; i++) {
-            const cls = LINE_CLASS[status[i]];
-            if (!cls) continue;
-            editor.addLineClass(i, 'background', cls);
-            state.lines.push(i);
-            state.classByLine[i] = cls;
-        }
+        editor.operation(() => {
+            for (let i = 0; i < limit; i++) {
+                const kind = status[i];
+                if (!LINE_CLASS[kind]) continue;
+                editor.addLineClass(i, 'background', LINE_CLASS[kind]);
+                editor.addLineClass(i, 'gutter', GUTTER_CLASS[kind]);
+                state.lines.push(i);
+                state.classByLine[i] = kind;
+            }
+        });
+    }
+
+    // wordsByLine[i] is a token list ({ text, type: 'eq'|'del'|'add' }) or null.
+    function applyWordMarks(editor, wordsByLine) {
+        if (!editor || !wordsByLine) return;
+        clearWordMarks(editor);
+
+        const state = getState(editor);
+        const limit = Math.min(wordsByLine.length, editor.lineCount());
+
+        editor.operation(() => {
+            for (let line = 0; line < limit; line++) {
+                const tokens = wordsByLine[line];
+                if (!tokens) continue;
+                let ch = 0;
+                tokens.forEach((t) => {
+                    const len = t.text.length;
+                    if (WORD_CLASS[t.type] && t.text.trim()) {
+                        state.marks.push(editor.markText(
+                            { line, ch },
+                            { line, ch: ch + len },
+                            { className: WORD_CLASS[t.type] }
+                        ));
+                    }
+                    ch += len;
+                });
+            }
+        });
+    }
+
+    function flashLine(editor, line, duration = 800) {
+        if (!editor || line < 0 || line >= editor.lineCount()) return;
+        clearFlash(editor);
+        const handle = editor.addLineClass(line, 'background', FLASH_CLASS);
+        const state = getState(editor);
+        state.flash = {
+            handle,
+            timer: setTimeout(() => {
+                editor.removeLineClass(handle, 'background', FLASH_CLASS);
+                state.flash = null;
+            }, duration)
+        };
     }
 
     function renderGutter(gutterId, lineCount, status, lineHeight) {
@@ -79,16 +157,18 @@ const JsonCmDiff = (function () {
         editor.scrollTo(scrollInfo.left, Math.max(0, lineTop - scroller.clientHeight / 3));
     }
 
-    function linkScrollPair(editorA, editorB, gutterAId, gutterBId) {
-        if (!editorA || !editorB) return () => {};
+    // options.isEnabled: optional () => boolean gate for toggleable sync.
+    function linkScrollPair(editorA, editorB, gutterAId, gutterBId, options = {}) {
+        if (!editorA || !editorB) return;
 
-        const gutterA = document.getElementById(gutterAId);
-        const gutterB = document.getElementById(gutterBId);
+        const gutterA = gutterAId ? document.getElementById(gutterAId) : null;
+        const gutterB = gutterBId ? document.getElementById(gutterBId) : null;
+        const isEnabled = typeof options.isEnabled === 'function' ? options.isEnabled : () => true;
         let syncing = false;
 
         const syncFrom = (source, target, sourceGutter, targetGutter) => {
             source.on('scroll', () => {
-                if (syncing) return;
+                if (syncing || !isEnabled()) return;
                 syncing = true;
                 const info = source.getScrollInfo();
                 target.scrollTo(info.left, info.top);
@@ -100,10 +180,6 @@ const JsonCmDiff = (function () {
 
         syncFrom(editorA, editorB, gutterA, gutterB);
         syncFrom(editorB, editorA, gutterB, gutterA);
-
-        return () => {
-            source.off?.('scroll');
-        };
     }
 
     function findLineForPath(editor, path) {
@@ -138,6 +214,8 @@ const JsonCmDiff = (function () {
 
     return {
         applyLineStatus,
+        applyWordMarks,
+        flashLine,
         renderGutter,
         clearEditor,
         clearGutter,
@@ -148,6 +226,9 @@ const JsonCmDiff = (function () {
     };
 })();
 
+const JsonCmDiff = CmDiff;
+
 if (typeof window !== 'undefined') {
-    window.JsonCmDiff = JsonCmDiff;
+    window.CmDiff = CmDiff;
+    window.JsonCmDiff = CmDiff;
 }

@@ -1,8 +1,8 @@
 {
   "manifest_version": 3,
   "name": "DevKit Pro",
-  "version": "2.0.0",
-  "description": "Offline developer toolkit: DDL/JSON → Go/Protobuf, schema diff, Markdown+Mermaid, JSON tools, image & media utilities.",
+  "version": "2.0.4",
+  "description": "An offline workbench that helps developers convert schemas, preview Markdown, and handle common coding tasks locally.",
   "action": {
     "default_title": "Open DevKit Pro",
     "default_icon": {
@@ -19,11 +19,12 @@
     "sandbox": "sandbox allow-scripts; script-src 'self' 'unsafe-inline' 'unsafe-eval' 'wasm-unsafe-eval'; child-src 'self';"
   },
   "sandbox": {
-    "pages": ["sandbox/mediainfo-sandbox.html"]
+    "pages": [
+      "sandbox/mediainfo-sandbox.html"
+    ]
   },
   "permissions": [
     "storage",
-    "clipboardWrite",
     "downloads"
   ],
   "icons": {

@@ -12,6 +12,14 @@
     let debouncedRender = null;
     let debouncedSave = null;
     let pendingSaveValue = null;
+    let currentView = 'split';
+    let syncScrollFrame = 0;
+    let fullscreenIdleTimer = 0;
+
+    const FULLSCREEN_IDLE_MS = 2200;
+
+    const VIEWS = ['edit', 'split', 'preview'];
+    const WORDS_PER_MINUTE = 300;
 
     function init(appCtx) {
         ctx = appCtx;
@@ -31,7 +39,10 @@
                 debouncedRender();
                 debouncedSave(val);
             });
+            markdownEditor.on('scroll', () => scheduleSyncScroll(markdownEditor));
         }
+
+        initViewControls();
 
         // Flush pending save before page unload
         window.addEventListener('beforeunload', () => {
@@ -44,6 +55,7 @@
         if (typeof MarkdownToc !== 'undefined') {
             const previewContainer = el.markdownPreview.closest('.markdown-preview-container');
             MarkdownToc.mount(previewContainer, el.markdownWorkspace);
+            syncTocLayout();
         }
 
         // Restore saved content
@@ -75,20 +87,113 @@
             el.toggleFullscreenBtn.addEventListener('click', toggleFullscreen);
         }
 
-        // ESC to exit fullscreen
-        document.addEventListener('keydown', (e) => {
-            if (e.key === 'Escape' && el.markdownWorkspace.classList.contains('fullscreen-preview')) {
-                el.markdownWorkspace.classList.remove('fullscreen-preview');
-                syncTocFullscreen(false);
-                ctx.setStatus('退出全屏', 'ready');
+        // Native fullscreen exits (Esc, F11, browser UI) arrive here
+        document.addEventListener('fullscreenchange', () => {
+            const native = document.fullscreenElement === el.markdownWorkspace;
+            if (native !== el.markdownWorkspace.classList.contains('fullscreen-preview')) {
+                setFullscreenState(native);
             }
+        });
+
+        // Esc for the class-only fallback (browser consumes Esc in native fullscreen)
+        document.addEventListener('keydown', (e) => {
+            if (e.key === 'Escape' && !document.fullscreenElement &&
+                el.markdownWorkspace.classList.contains('fullscreen-preview')) {
+                setFullscreenState(false);
+            }
+        });
+
+        el.markdownWorkspace.addEventListener('mousemove', wakeFullscreenChrome);
+        el.markdownWorkspace.addEventListener('keydown', wakeFullscreenChrome);
+    }
+
+    function initViewControls() {
+        const workspace = ctx.elements.markdownWorkspace;
+        workspace.querySelectorAll('.md-view-btn').forEach((btn) => {
+            btn.addEventListener('click', () => {
+                setView(btn.dataset.view);
+                persistSetting('markdownView', currentView);
+            });
+        });
+
+        const syncChip = document.getElementById('markdownSyncScroll');
+        syncChip?.addEventListener('click', () => {
+            const on = !syncChip.classList.contains('is-on');
+            setSyncChip(on);
+            persistSetting('markdownSyncScroll', on);
+            if (on) scheduleSyncScroll(editorManager.get('markdownInput'));
+        });
+
+        const settings = ctx.getSettings ? ctx.getSettings() : null;
+        setView(settings?.markdownView);
+        setSyncChip(settings?.markdownSyncScroll !== false);
+    }
+
+    // The app keeps its own settings snapshot and saves it wholesale; keep both in step.
+    function persistSetting(key, value) {
+        const snapshot = ctx.getSettings ? ctx.getSettings() : null;
+        if (snapshot) snapshot[key] = value;
+        if (typeof Settings !== 'undefined') Settings.set(key, value);
+    }
+
+    function setView(view) {
+        currentView = VIEWS.includes(view) ? view : 'split';
+        const workspace = ctx.elements.markdownWorkspace;
+        workspace.dataset.view = currentView;
+        workspace.querySelectorAll('.md-view-btn').forEach((btn) => {
+            const active = btn.dataset.view === currentView;
+            btn.classList.toggle('active', active);
+            btn.setAttribute('aria-selected', active ? 'true' : 'false');
+        });
+        if (currentView !== 'preview') ctx.refreshEditorsIn('markdownInput');
+        syncTocLayout();
+    }
+
+    function setSyncChip(on) {
+        const chip = document.getElementById('markdownSyncScroll');
+        if (!chip) return;
+        chip.classList.toggle('is-on', !!on);
+        chip.setAttribute('aria-pressed', on ? 'true' : 'false');
+    }
+
+    function scheduleSyncScroll(editor) {
+        if (!editor || syncScrollFrame) return;
+        syncScrollFrame = requestAnimationFrame(() => {
+            syncScrollFrame = 0;
+            const workspace = ctx.elements.markdownWorkspace;
+            if (currentView !== 'split' || workspace.classList.contains('fullscreen-preview')) return;
+            if (!document.getElementById('markdownSyncScroll')?.classList.contains('is-on')) return;
+
+            const container = ctx.elements.markdownPreview.closest('.markdown-preview-container');
+            if (!container) return;
+            const info = editor.getScrollInfo();
+            const editorRange = info.height - info.clientHeight;
+            const ratio = editorRange > 0 ? info.top / editorRange : 0;
+            container.scrollTop = ratio * (container.scrollHeight - container.clientHeight);
         });
     }
 
-    function syncTocFullscreen(isFullscreen) {
-        if (typeof MarkdownToc !== 'undefined') {
-            MarkdownToc.setFullscreen(isFullscreen);
+    function updateStats(input) {
+        const statsEl = document.getElementById('markdownStats');
+        if (!statsEl) return;
+        if (!input || !input.trim()) {
+            statsEl.textContent = '';
+            return;
         }
+        const cjk = (input.match(/[\u3400-\u9fff\uf900-\ufaff]/g) || []).length;
+        const words = (input.replace(/[\u3400-\u9fff\uf900-\ufaff]/g, ' ').match(/[A-Za-z0-9]+(?:['’-][A-Za-z0-9]+)*/g) || []).length;
+        const total = cjk + words;
+        const lines = editorManager.get('markdownInput')?.lineCount() || input.split('\n').length;
+        const minutes = Math.max(1, Math.round(total / WORDS_PER_MINUTE));
+        statsEl.textContent = `${total.toLocaleString()} 字 · ${lines.toLocaleString()} 行 · 约 ${minutes} 分钟阅读`;
+    }
+
+    // Preview-only view uses the same left sidebar TOC as fullscreen.
+    function syncTocLayout() {
+        if (typeof MarkdownToc === 'undefined' || !ctx) return;
+        const workspace = ctx.elements.markdownWorkspace;
+        const wide = workspace.classList.contains('fullscreen-preview') || currentView === 'preview';
+        MarkdownToc.setFullscreen(wide);
     }
 
     function flushSave(val) {
@@ -100,6 +205,7 @@
 
     async function handleRender() {
         const input = editorManager.getValue('markdownInput');
+        updateStats(input);
 
         if (!input.trim()) {
             ctx.elements.markdownPreview.innerHTML = '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
@@ -143,6 +249,7 @@
 
     function handleClear() {
         editorManager.setValue('markdownInput', '');
+        updateStats('');
         ctx.elements.markdownPreview.innerHTML = '<p class="placeholder">输入 Markdown 文本开始预览...</p>';
         lastRenderedHtml = '';
         if (typeof MarkdownToc !== 'undefined') MarkdownToc.clear();
@@ -151,9 +258,53 @@
     }
 
     function toggleFullscreen() {
-        const isFullscreen = ctx.elements.markdownWorkspace.classList.toggle('fullscreen-preview');
-        syncTocFullscreen(isFullscreen);
-        ctx.setStatus(isFullscreen ? '全屏预览 (按 Esc 退出)' : '正常视图', 'ready');
+        const workspace = ctx.elements.markdownWorkspace;
+        if (document.fullscreenElement === workspace) {
+            document.exitFullscreen().catch(() => setFullscreenState(false));
+            return;
+        }
+        if (workspace.classList.contains('fullscreen-preview')) {
+            setFullscreenState(false);
+            return;
+        }
+        if (workspace.requestFullscreen) {
+            workspace.requestFullscreen()
+                .then(() => setFullscreenState(true))
+                .catch(() => setFullscreenState(true));
+        } else {
+            setFullscreenState(true);
+        }
+    }
+
+    function setFullscreenState(on) {
+        const workspace = ctx.elements.markdownWorkspace;
+        workspace.classList.toggle('fullscreen-preview', on);
+
+        const btn = ctx.elements.toggleFullscreenBtn;
+        if (btn) {
+            btn.setAttribute('aria-pressed', on ? 'true' : 'false');
+            btn.title = on ? '退出沉浸阅读 (Esc)' : '沉浸阅读 (Esc 退出)';
+            const label = btn.querySelector('.md-fs-label');
+            if (label) label.textContent = on ? '退出' : '全屏';
+        }
+
+        if (on) {
+            syncTocLayout();
+            wakeFullscreenChrome();
+        } else {
+            clearTimeout(fullscreenIdleTimer);
+            workspace.classList.remove('is-idle');
+            setView(currentView);
+        }
+        ctx.setStatus(on ? '沉浸阅读 (按 Esc 退出)' : '正常视图', 'ready');
+    }
+
+    function wakeFullscreenChrome() {
+        const workspace = ctx.elements.markdownWorkspace;
+        if (!workspace.classList.contains('fullscreen-preview')) return;
+        workspace.classList.remove('is-idle');
+        clearTimeout(fullscreenIdleTimer);
+        fullscreenIdleTimer = setTimeout(() => workspace.classList.add('is-idle'), FULLSCREEN_IDLE_MS);
     }
 
     async function handleCopyHtml() {
@@ -164,6 +315,7 @@
         try {
             await navigator.clipboard.writeText(lastRenderedHtml);
             ctx.setStatus('HTML 已复制到剪贴板', 'success');
+            if (ctx.showToast) ctx.showToast('已复制 HTML');
             ctx.elements.copyMarkdownHtmlBtn.classList.add('copied');
             setTimeout(() => ctx.elements.copyMarkdownHtmlBtn.classList.remove('copied'), 600);
         } catch (error) {

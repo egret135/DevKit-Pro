@@ -129,6 +129,23 @@ const MediaUtils = {
      * @returns {Blob}
      */
     audioBufferToMp3Blob(buffer, startSec = 0, endSec = buffer.duration, kbps = 192) {
+        return this._encodeMp3Sync(buffer, startSec, endSec, kbps, null);
+    },
+
+    /**
+     * Async MP3 encode that yields to the UI and reports progress 0..1.
+     * @param {AudioBuffer} buffer
+     * @param {number} [startSec=0]
+     * @param {number} [endSec=buffer.duration]
+     * @param {number} [kbps=192]
+     * @param {(p: number) => void} [onProgress]
+     * @returns {Promise<Blob>}
+     */
+    async audioBufferToMp3BlobAsync(buffer, startSec = 0, endSec = buffer.duration, kbps = 192, onProgress) {
+        return this._encodeMp3Async(buffer, startSec, endSec, kbps, onProgress);
+    },
+
+    _mp3Prepare(buffer, startSec, endSec, kbps) {
         if (typeof lamejs === 'undefined') {
             throw new Error('MP3 编码库未加载');
         }
@@ -144,22 +161,51 @@ const MediaUtils = {
             return out;
         };
 
-        const left = toInt16(channels[0]);
-        const right = channelCount === 2 ? toInt16(channels[1]) : null;
+        return {
+            left: toInt16(channels[0]),
+            right: channelCount === 2 ? toInt16(channels[1]) : null,
+            encoder: new lamejs.Mp3Encoder(channelCount, sampleRate, kbps),
+            blockSize: 1152
+        };
+    },
 
-        const encoder = new lamejs.Mp3Encoder(channelCount, sampleRate, kbps);
-        const blockSize = 1152;
+    _encodeMp3Sync(buffer, startSec, endSec, kbps, onProgress) {
+        const { left, right, encoder, blockSize } = this._mp3Prepare(buffer, startSec, endSec, kbps);
         const parts = [];
+        const total = left.length || 1;
         for (let i = 0; i < left.length; i += blockSize) {
             const leftChunk = left.subarray(i, i + blockSize);
             const chunk = right
                 ? encoder.encodeBuffer(leftChunk, right.subarray(i, i + blockSize))
                 : encoder.encodeBuffer(leftChunk);
             if (chunk.length) parts.push(chunk);
+            if (onProgress) onProgress(Math.min(1, (i + blockSize) / total));
         }
         const tail = encoder.flush();
         if (tail.length) parts.push(tail);
+        if (onProgress) onProgress(1);
+        return new Blob(parts, { type: 'audio/mpeg' });
+    },
 
+    async _encodeMp3Async(buffer, startSec, endSec, kbps, onProgress) {
+        const { left, right, encoder, blockSize } = this._mp3Prepare(buffer, startSec, endSec, kbps);
+        const parts = [];
+        const total = left.length || 1;
+        const yieldEvery = blockSize * 32;
+        for (let i = 0; i < left.length; i += blockSize) {
+            const leftChunk = left.subarray(i, i + blockSize);
+            const chunk = right
+                ? encoder.encodeBuffer(leftChunk, right.subarray(i, i + blockSize))
+                : encoder.encodeBuffer(leftChunk);
+            if (chunk.length) parts.push(chunk);
+            if (onProgress) onProgress(Math.min(1, (i + blockSize) / total));
+            if (i > 0 && i % yieldEvery < blockSize) {
+                await new Promise((r) => setTimeout(r, 0));
+            }
+        }
+        const tail = encoder.flush();
+        if (tail.length) parts.push(tail);
+        if (onProgress) onProgress(1);
         return new Blob(parts, { type: 'audio/mpeg' });
     },
 
@@ -171,15 +217,17 @@ const MediaUtils = {
      */
     formatDuration(seconds, withMillis = false) {
         if (!Number.isFinite(seconds) || seconds < 0) return '-';
-        const h = Math.floor(seconds / 3600);
-        const m = Math.floor((seconds % 3600) / 60);
-        const s = Math.floor(seconds % 60);
+        // Round via total ms so 0.9996s → 00:01.000 instead of 00:00.1000.
+        const totalMs = Math.max(0, Math.round(seconds * 1000));
+        const ms = totalMs % 1000;
+        let totalSec = Math.floor(totalMs / 1000);
+        const h = Math.floor(totalSec / 3600);
+        totalSec -= h * 3600;
+        const m = Math.floor(totalSec / 60);
+        const s = totalSec - m * 60;
         const pad = (n) => String(n).padStart(2, '0');
         let out = h > 0 ? `${pad(h)}:${pad(m)}:${pad(s)}` : `${pad(m)}:${pad(s)}`;
-        if (withMillis) {
-            const ms = Math.round((seconds - Math.floor(seconds)) * 1000);
-            out += `.${String(ms).padStart(3, '0')}`;
-        }
+        if (withMillis) out += `.${String(ms).padStart(3, '0')}`;
         return out;
     }
 };

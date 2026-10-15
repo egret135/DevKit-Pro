@@ -82,8 +82,8 @@ const MarkdownExporter = {
         const isFullscreen = markdownWorkspace && markdownWorkspace.classList.contains('fullscreen-preview');
 
         // Determine export width based on fullscreen state
-        // Normal mode: 860px max-width, Fullscreen mode: 1450px max-width
-        const exportMaxWidth = isFullscreen ? 1450 : 860;
+        // Normal mode: 860px max-width, Fullscreen mode: 1100px max-width
+        const exportMaxWidth = isFullscreen ? 1100 : 860;
 
         // Add padding for visual comfort (matches the container padding)
         const paddingX = this.EXPORT_PADDING_X;
